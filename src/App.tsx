@@ -17,6 +17,9 @@ import ProgressCard from "./features/progress/ProgressCard";
 import HeroRig3D from "./features/avatar/HeroRig3D";
 import { useAvatar } from "./state/avatar";
 
+// NEW: schedule imports (bell loop + store)
+import { useSchedule, startBellLoop, stopBellLoop } from "./state/schedule";
+
 /* ---------------- Tabs ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
 const TAB_HASH: Record<Tab, `#/${Tab}`> = { play: "#/play", build: "#/build", avatar: "#/avatar", store: "#/store" };
@@ -36,6 +39,42 @@ function SpinningBlock() {
   );
 }
 
+/* NEW: tiny on-screen schedule HUD */
+function ScheduleHUD() {
+  const { periods, activePeriodId, nextBellTs, canBuild } = useSchedule();
+  const active = periods.find((p) => p.id === activePeriodId);
+  const building = canBuild();
+
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  let timeLeft = "--:--";
+  if (nextBellTs) {
+    const ms = Math.max(0, nextBellTs - now);
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    timeLeft = `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  return (
+    <div className="pointer-events-none fixed left-4 top-4 z-50 grid gap-1 rounded-xl bg-black/55 px-3 py-2 text-white backdrop-blur-sm">
+      <div className="text-xs uppercase tracking-wide opacity-80">Current Period</div>
+      <div className="text-lg font-semibold leading-none">{active?.label ?? "—"}</div>
+      <div className="text-xs opacity-80">Next bell in: {timeLeft}</div>
+      <div
+        className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs ${
+          building ? "bg-emerald-500/80" : "bg-rose-500/80"
+        }`}
+      >
+        {building ? "Free Build Unlocked" : "Complete 5 Questions to Build"}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => hashToTab(window.location.hash || "#/play"));
   useEffect(() => {
@@ -48,6 +87,12 @@ export default function App() {
     if (location.hash !== h) location.hash = h;
     setTab(t);
   };
+
+  // NEW: start/stop bell loop while app is mounted
+  useEffect(() => {
+    startBellLoop(1000);
+    return () => stopBellLoop();
+  }, []);
 
   const [quizOpen, setQuizOpen] = useState(false);
   const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
@@ -77,13 +122,24 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* NEW: HUD at root so it overlays everything */}
+      <ScheduleHUD />
+
       <header className="topbar">
         <div className="brand">EduVerse Arena</div>
         <nav className="tabs">
-          <button className={tab === "play" ? "tab active" : "tab"} onClick={() => go("play")}>Play</button>
-          <button className={tab === "build" ? "tab active" : "tab"} onClick={() => go("build")}>Build Worlds</button>
-          <button className={tab === "avatar" ? "tab active" : "tab"} onClick={() => go("avatar")}>Create-Your-Hero</button>
-          <button className={tab === "store" ? "tab active" : "tab"} onClick={() => go("store")}>Store</button>
+          <button className={tab === "play" ? "tab active" : "tab"} onClick={() => go("play")}>
+            Play
+          </button>
+          <button className={tab === "build" ? "tab active" : "tab"} onClick={() => go("build")}>
+            Build Worlds
+          </button>
+          <button className={tab === "avatar" ? "tab active" : "tab"} onClick={() => go("avatar")}>
+            Create-Your-Hero
+          </button>
+          <button className={tab === "store" ? "tab active" : "tab"} onClick={() => go("store")}>
+            Store
+          </button>
         </nav>
       </header>
 
@@ -141,14 +197,20 @@ export default function App() {
                   {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
                 </button>
                 <p className="muted small" style={{ marginTop: 8 }}>
-                  {cleared ? `Cleared • ${lastQuiz?.subject} (${lastQuiz?.correctCount}/5)` : "Pass 3/5 to queue."}
+                  {cleared
+                    ? `Cleared • ${lastQuiz?.subject} (${lastQuiz?.correctCount}/5)`
+                    : "Pass 5/5 to queue."}
                 </p>
               </div>
 
               <QuestsPanel />
 
               <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="checkbox" checked={schoolMode} onChange={(e) => setSchoolMode(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={schoolMode}
+                  onChange={(e) => setSchoolMode(e.target.checked)}
+                />
                 Enable School Mode (tight chat, no voice)
               </label>
 
@@ -167,7 +229,9 @@ export default function App() {
             <div>
               <h2>Create-Your-Hero</h2>
               <p>Live 3D avatar editor (body, skin, hair, eyes, outfits, trails, win FX).</p>
-              <button className="primary" onClick={() => setStudioOpen(true)}>Open Studio</button>
+              <button className="primary" onClick={() => setStudioOpen(true)}>
+                Open Studio
+              </button>
             </div>
           )}
 
