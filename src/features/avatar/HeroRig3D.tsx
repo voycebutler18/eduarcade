@@ -219,86 +219,93 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
   const yTop = 0.12; // crown shift
 
   switch (style) {
-    /** CLOSE-CUT CAP that reads as "short hair" */
+    /** SHORT: Classic short haircut with fuller coverage */
     case "Short":
       return (
         <group>
-          {/* cap ring (sides) */}
-          <mesh position={[0, yTop + 0.02, 0]} castShadow>
-            <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
+          {/* Main short hair cap covering top and sides */}
+          <mesh position={[0, yTop + 0.04, 0]} castShadow>
+            <sphereGeometry args={[R + 0.04, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* top disk */}
-          <mesh position={[0, yTop + 0.12, 0]} castShadow>
-            <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
+          {/* Side fringe/bangs */}
+          <mesh position={[0, yTop + 0.05, 0.26]} castShadow>
+            <boxGeometry args={[0.50, 0.12, 0.06]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
       );
 
-    /** PONYTAIL: a headband + tube of hair behind */
+    /** PONYTAIL: Hair pulled back with visible ponytail */
     case "Ponytail":
       return (
         <group>
-          {/* headband */}
-          <mesh position={[0, yTop + 0.04, 0]} castShadow>
-            <torusGeometry args={[R + 0.02, 0.03, 16, 48]} />
+          {/* Top/crown slicked back hair */}
+          <mesh position={[0, yTop + 0.06, 0]} castShadow>
+            <sphereGeometry args={[R + 0.03, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.5]} />
             <meshStandardMaterial color={color} roughness={0.75} />
           </mesh>
-          {/* crown hair */}
-          <mesh position={[0, yTop + 0.05, 0]} castShadow>
-            <sphereGeometry args={[R + 0.02, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.2]} />
+          {/* Gathered ponytail base */}
+          <mesh position={[0, yTop - 0.02, -0.32]} castShadow>
+            <sphereGeometry args={[0.11, 16, 16]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* ponytail tube */}
-          <mesh position={[0, yTop - 0.03, -0.22]} rotation={[0.35, 0, 0]} castShadow>
+          {/* Long ponytail hanging down */}
+          <mesh position={[0, yTop - 0.18, -0.36]} rotation={[0.25, 0, 0]} castShadow>
             {(THREE as any).CapsuleGeometry ? (
-              <capsuleGeometry args={[0.09, 0.45, 8, 12]} />
+              <capsuleGeometry args={[0.08, 0.40, 8, 16]} />
             ) : (
-              <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
+              <cylinderGeometry args={[0.08, 0.06, 0.56, 16]} />
             )}
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
       );
 
-    /** CURLY: clusters of balls around the crown */
+    /** CURLY: Voluminous curly hair with bigger poof */
     case "Curly":
       return (
-        <group position={[0, yTop + 0.02, 0]}>
+        <group position={[0, yTop + 0.04, 0]}>
+          {/* Main curly mass on top */}
           {[
-            [-0.20, 0.06, 0.00], [0, 0.08, 0.00], [0.20, 0.06, 0.00],
-            [-0.16, 0.03, 0.14], [0.0, 0.04, 0.16], [0.16, 0.03, 0.14],
-            [-0.16, 0.03, -0.14], [0.0, 0.02, -0.16], [0.16, 0.03, -0.14],
+            // Top layer - bigger curls
+            [-0.18, 0.12, 0.02], [0, 0.16, 0.02], [0.18, 0.12, 0.02],
+            // Middle layer
+            [-0.22, 0.06, 0.12], [0.0, 0.08, 0.16], [0.22, 0.06, 0.12],
+            [-0.22, 0.06, -0.08], [0.0, 0.08, -0.12], [0.22, 0.06, -0.08],
+            // Back layer
+            [-0.14, 0.04, -0.18], [0.0, 0.06, -0.22], [0.14, 0.04, -0.18],
           ].map((p, i) => (
             <mesh key={i} position={p as any} castShadow>
-              <sphereGeometry args={[0.14, 18, 18]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
+              <sphereGeometry args={[0.13, 20, 20]} />
+              <meshStandardMaterial color={color} roughness={0.75} />
             </mesh>
           ))}
         </group>
       );
 
-    /** BUZZ: very thin cap hugging the scalp */
+    /** BUZZ: Very short buzz cut, barely visible */
     case "Buzz":
       return (
-        <mesh position={[0, yTop + 0.01, 0]} castShadow>
-          {/* thin hemisphere slice (thetaLength small) */}
-          <sphereGeometry args={[R + 0.005, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4.5]} />
-          <meshStandardMaterial color={color} roughness={0.9} />
-        </mesh>
+        <group>
+          {/* Ultra-thin cap hugging scalp */}
+          <mesh position={[0, yTop + 0.01, 0]} castShadow>
+            <sphereGeometry args={[R + 0.008, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+            <meshStandardMaterial color={color} roughness={0.95} />
+          </mesh>
+        </group>
       );
 
     default:
       // fallback to Short
       return (
         <group>
-          <mesh position={[0, yTop + 0.02, 0]} castShadow>
-            <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
+          <mesh position={[0, yTop + 0.04, 0]} castShadow>
+            <sphereGeometry args={[R + 0.04, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          <mesh position={[0, yTop + 0.12, 0]} castShadow>
-            <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
+          <mesh position={[0, yTop + 0.05, 0.26]} castShadow>
+            <boxGeometry args={[0.50, 0.12, 0.06]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
