@@ -2,7 +2,15 @@
 import * as THREE from "three";
 import { GroupProps, useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-import { AvatarPreset } from "../../state/avatar";
+
+type AvatarPreset = {
+  skin?: "Very Light" | "Light" | "Tan" | "Deep" | "Rich";
+  hair?: "Short" | "Ponytail" | "Curly" | "Buzz";
+  eyes?: "Round" | "Sharp" | "Happy";
+  expr?: "Neutral" | "Smile" | "Wow" | "Determined";
+  body?: "Slim" | "Standard" | "Athletic";
+  outfitId?: "outfit_runner" | "outfit_astro";
+};
 
 /**
  * HeroRig3D (procedural, original)
@@ -50,21 +58,13 @@ export default function HeroRig3D({
       <group ref={gTorso} position={[0, 0.9, 0]}>
         {/* base torso */}
         <mesh castShadow receiveShadow>
-          {(THREE as any).CapsuleGeometry ? (
-            <capsuleGeometry args={[0.46, 0.64, 8, 16]} />
-          ) : (
-            <boxGeometry args={[0.92, 1.1, 0.5]} />
-          )}
+          <cylinderGeometry args={[0.46, 0.46, 1.1, 16]} />
           <meshStandardMaterial color={"#1b2b4b"} roughness={0.7} metalness={0.05} />
         </mesh>
 
         {/* shirt overlay */}
         <mesh position={[0, 0.01, 0]} scale={[1.015, 1.02, 1.02]} castShadow receiveShadow>
-          {(THREE as any).CapsuleGeometry ? (
-            <capsuleGeometry args={[0.47, 0.66, 8, 16]} />
-          ) : (
-            <boxGeometry args={[0.94, 1.12, 0.52]} />
-          )}
+          <cylinderGeometry args={[0.47, 0.47, 1.12, 16]} />
           <meshStandardMaterial color={shirt} roughness={0.5} metalness={0.08} />
         </mesh>
 
@@ -81,7 +81,7 @@ export default function HeroRig3D({
             <meshStandardMaterial color={skin} roughness={0.85} />
           </mesh>
 
-          {/* HAIR — improved, clearly distinguishable */}
+          {/* HAIR – improved, clearly distinguishable */}
           {hairStyle(preset?.hair, hairColor)}
 
           {/* eyes */}
@@ -140,29 +140,17 @@ function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: 
     <group rotation={[0, 0, side * 0.15]}>
       {/* upper arm */}
       <mesh position={[side * 0.08, -0.18, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.11, 0.28, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.11, 0.11, 0.5, 12]} />
-        )}
+        <cylinderGeometry args={[0.11, 0.11, 0.5, 12]} />
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
       {/* sleeve */}
       <mesh position={[side * 0.08, -0.05, 0]} scale={[1.06, 0.6, 1.06]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.12, 0.18, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.12, 0.12, 0.3, 12]} />
-        )}
+        <cylinderGeometry args={[0.12, 0.12, 0.3, 12]} />
         <meshStandardMaterial color={sleeve} roughness={0.55} />
       </mesh>
       {/* forearm */}
       <mesh position={[side * 0.12, -0.52, 0]} rotation={[0, 0, side * 0.08]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.105, 0.32, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.105, 0.105, 0.52, 12]} />
-        )}
+        <cylinderGeometry args={[0.105, 0.105, 0.52, 12]} />
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
       {/* hand */}
@@ -179,20 +167,12 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
     <group>
       {/* thigh */}
       <mesh position={[0, -0.18, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.13, 0.32, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.13, 0.13, 0.5, 12]} />
-        )}
+        <cylinderGeometry args={[0.13, 0.13, 0.5, 12]} />
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
       {/* calf */}
       <mesh position={[0.02, -0.54, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.12, 0.34, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.12, 0.12, 0.54, 12]} />
-        )}
+        <cylinderGeometry args={[0.12, 0.12, 0.54, 12]} />
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
       {/* foot */}
@@ -219,7 +199,7 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
   const yTop = 0.12; // crown shift
 
   switch (style) {
-    /** CLOSE-CUT CAP that reads as "short hair" */
+    /** SHORT: CLOSE-CUT CAP that reads as "short hair" */
     case "Short":
       return (
         <group>
@@ -252,11 +232,7 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
           </mesh>
           {/* ponytail tube */}
           <mesh position={[0, yTop - 0.03, -0.22]} rotation={[0.35, 0, 0]} castShadow>
-            {(THREE as any).CapsuleGeometry ? (
-              <capsuleGeometry args={[0.09, 0.45, 8, 12]} />
-            ) : (
-              <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
-            )}
+            <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
