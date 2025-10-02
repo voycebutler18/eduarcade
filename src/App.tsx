@@ -17,8 +17,11 @@ import ProgressCard from "./features/progress/ProgressCard";
 import HeroRig3D from "./features/avatar/HeroRig3D";
 import { useAvatar } from "./state/avatar";
 
-// NEW: schedule imports (bell loop + store)
+// schedule (bell loop + store)
 import { useSchedule, startBellLoop, stopBellLoop } from "./state/schedule";
+
+// NEW: classroom portals
+import ClassroomPortal from "./features/classroom/ClassroomPortal";
 
 /* ---------------- Tabs ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -39,7 +42,7 @@ function SpinningBlock() {
   );
 }
 
-/* NEW: tiny on-screen schedule HUD */
+/* tiny on-screen schedule HUD */
 function ScheduleHUD() {
   const { periods, activePeriodId, nextBellTs, canBuild } = useSchedule();
   const active = periods.find((p) => p.id === activePeriodId);
@@ -75,6 +78,32 @@ function ScheduleHUD() {
   );
 }
 
+/* NEW: Build tab guard */
+function BuildGuard({ children }: { children: React.ReactNode }) {
+  const { canBuild } = useSchedule();
+  const unlocked = canBuild();
+  if (unlocked) return <>{children}</>;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        border: "1px solid rgba(255,255,255,.08)",
+        background: "#0b1222",
+        color: "#e6edf7",
+        borderRadius: 14,
+        padding: 16,
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>Build Locked</div>
+      <p style={{ margin: 0, color: "#9fb0c7", fontSize: 14 }}>
+        Get a perfect <b>5/5</b> in your current class to unlock free build until the next bell. You can also wait for
+        the bell to change periods.
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => hashToTab(window.location.hash || "#/play"));
   useEffect(() => {
@@ -88,7 +117,7 @@ export default function App() {
     setTab(t);
   };
 
-  // NEW: start/stop bell loop while app is mounted
+  // start/stop bell loop
   useEffect(() => {
     startBellLoop(1000);
     return () => stopBellLoop();
@@ -120,9 +149,20 @@ export default function App() {
 
   const [schoolMode, setSchoolMode] = useState(false);
 
+  // optional: handle AI lesson start/stop hooks from portals
+  function handleStartLesson(classId: string) {
+    // TODO: connect your realtime AI here (speech/text, subject by classId)
+    // e.g., ai.startLesson(classId)
+    // console.log("Lesson start", classId);
+  }
+  function handleEndLesson(classId: string) {
+    // e.g., ai.endLesson(classId)
+    // console.log("Lesson end", classId);
+  }
+
   return (
     <div className="app">
-      {/* NEW: HUD at root so it overlays everything */}
+      {/* HUD */}
       <ScheduleHUD />
 
       <header className="topbar">
@@ -205,12 +245,28 @@ export default function App() {
 
               <QuestsPanel />
 
+              {/* NEW: School campus — enter rooms to auto-start lessons if it's the right period */}
+              <div style={{ marginTop: 6 }}>
+                <h3 style={{ margin: "6px 0 8px" }}>School Campus</h3>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 10,
+                  }}
+                >
+                  <ClassroomPortal classId="HOMEROOM" label="Homeroom" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="MATH" label="Math" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="ELA" label="ELA / Reading" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="SCI" label="Science" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="SOC" label="Social Studies" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="LUNCH" label="Lunch" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                  <ClassroomPortal classId="ELECT" label="Elective" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
+                </div>
+              </div>
+
               <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={schoolMode}
-                  onChange={(e) => setSchoolMode(e.target.checked)}
-                />
+                <input type="checkbox" checked={schoolMode} onChange={(e) => setSchoolMode(e.target.checked)} />
                 Enable School Mode (tight chat, no voice)
               </label>
 
@@ -223,7 +279,11 @@ export default function App() {
             </div>
           )}
 
-          {tab === "build" && <BuildWorlds />}
+          {tab === "build" && (
+            <BuildGuard>
+              <BuildWorlds />
+            </BuildGuard>
+          )}
 
           {tab === "avatar" && (
             <div>
