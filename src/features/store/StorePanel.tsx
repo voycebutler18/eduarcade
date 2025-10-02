@@ -1,9 +1,9 @@
 // src/features/store/StorePanel.tsx
-import React from "react";
 import { useInventory, StoreItem } from "../../state/inventory";
 import { useWallet, COIN_SKUS, type CoinSkuId } from "../../state/wallet";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL; // e.g., https://your-api.onrender.com
+const COIN_PACKS: CoinSkuId[] = ["COINS_1K", "COINS_5K", "COINS_12K"];
 
 function BalanceBar() {
   const coins = useWallet((s) => s.coins);
@@ -32,15 +32,15 @@ function BuyCoins() {
       const resp = await fetch(`${API_BASE}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // TODO: pass your real logged-in user id if you have auth
+        // TODO: replace "anon" with your real logged-in user id when auth is wired
         body: JSON.stringify({ sku, userId: "anon" }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || "Checkout failed");
       if (!data?.url) throw new Error("No checkout URL returned");
-      window.location.href = data.url; // Redirect to Stripe Checkout
+      window.location.href = data.url; // Stripe Checkout
     } catch (e: any) {
-      alert(e.message || "Checkout failed");
+      alert(e?.message || "Checkout failed");
     }
   }
 
@@ -54,7 +54,7 @@ function BuyCoins() {
       </div>
 
       <div className="buyc-grid">
-        {(Object.keys(COIN_SKUS) as CoinSkuId[]).map((id) => {
+        {COIN_PACKS.map((id) => {
           const def = COIN_SKUS[id];
           return (
             <div className="sku" key={id}>
@@ -62,10 +62,7 @@ function BuyCoins() {
                 <div className="sku-emoji">🪙</div>
                 <div className="sku-meta">
                   <div className="sku-name">{def.label}</div>
-                  <div className="sku-sub">
-                    {/* Price is shown for UX; actual amount is defined by your Stripe Price on the server */}
-                    ${def.priceUsd.toFixed(2)}
-                  </div>
+                  <div className="sku-sub">${def.priceUsd.toFixed(2)} USD</div>
                 </div>
               </div>
               <button className="primary w100" onClick={() => startCheckout(id)}>
@@ -114,21 +111,22 @@ function ItemCard({ item }: { item: StoreItem }) {
   const isEquipped = equipped[item.slot] === item.id;
   const canAfford = wallet.canAfford(item.price);
 
-  async function onBuy() {
+  function scrollToBuyCoins() {
+    const node = document.getElementById("buy-coins");
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function onBuy() {
     const res = buy(item.id);
     if (!res.ok) {
       if (!canAfford) {
         const goTopUp = window.confirm(
           `You need ${item.price.toLocaleString()} coins but only have ${wallet.format()}.\n\nBuy more coins now?`
         );
-        if (goTopUp) {
-          const node = document.getElementById("buy-coins");
-          if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        if (goTopUp) scrollToBuyCoins();
       } else {
         alert(res.reason ?? "Could not buy.");
       }
-      return;
     }
   }
 
@@ -151,7 +149,12 @@ function ItemCard({ item }: { item: StoreItem }) {
 
       <div className="row2">
         {!owned ? (
-          <button className="primary" onClick={onBuy} disabled={!canAfford}>
+          <button
+            className="primary"
+            onClick={onBuy}
+            // NOTE: don't disable; we want to catch click and guide to Buy Coins
+            style={!canAfford ? { opacity: 0.8 } : undefined}
+          >
             {canAfford ? "Buy" : "Need Coins"}
           </button>
         ) : isEquipped ? (
