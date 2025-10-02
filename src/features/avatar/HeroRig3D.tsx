@@ -1,3 +1,4 @@
+// src/features/avatar/HeroRig3D.tsx
 import * as THREE from "three";
 import { GroupProps, useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
@@ -5,10 +6,10 @@ import { AvatarPreset } from "../../state/avatar";
 
 /**
  * HeroRig3D (procedural, original)
- * - Head & neck are parented to the torso (no floating)
- * - Rounded capsule limbs, rounded torso, simple shoes
- * - Subtle idle animation
- * - Materials tuned for soft, toy-like look (no external assets)
+ * - Head/neck parented to torso (no floating)
+ * - Capsule limbs + rounded torso
+ * - Subtle idle motion
+ * - Improved hair styles that match labels: Short, Ponytail, Curly, Buzz
  */
 
 export default function HeroRig3D({
@@ -25,7 +26,7 @@ export default function HeroRig3D({
 
   // appearance from preset
   const skin = useMemo(() => skinHex(preset?.skin), [preset?.skin]);
-  const hair = useMemo(() => "#27334d", []);
+  const hairColor = "#27334d"; // single MVP shade; swap later for palette
   const shirt = useMemo(() => outfitTop(preset?.outfitId), [preset?.outfitId]);
   const pants = useMemo(() => outfitBottom(preset?.outfitId), [preset?.outfitId]);
   const shoes = useMemo(() => outfitShoes(preset?.outfitId), [preset?.outfitId]);
@@ -45,7 +46,6 @@ export default function HeroRig3D({
 
   return (
     <group ref={root} {...props} scale={bodyScale} castShadow receiveShadow>
-      {/* Pelvis height baseline: feet at ~0 */}
       {/* ---- Torso group (head/neck are children so they stay attached) ---- */}
       <group ref={gTorso} position={[0, 0.9, 0]}>
         {/* base torso */}
@@ -68,21 +68,21 @@ export default function HeroRig3D({
           <meshStandardMaterial color={shirt} roughness={0.5} metalness={0.08} />
         </mesh>
 
-        {/* neck (relative to torso top) */}
+        {/* neck */}
         <mesh position={[0, 0.64, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[0.12, 0.12, 0.14, 16]} />
           <meshStandardMaterial color={skin} roughness={0.85} />
         </mesh>
 
-        {/* head (child of torso -> never floats) */}
+        {/* head */}
         <group ref={gHead} position={[0, 0.85, 0]}>
           <mesh castShadow>
             <sphereGeometry args={[0.34, 32, 32]} />
             <meshStandardMaterial color={skin} roughness={0.85} />
           </mesh>
 
-          {/* hair */}
-          {hairStyle(preset?.hair, hair)}
+          {/* HAIR — improved, clearly distinguishable */}
+          {hairStyle(preset?.hair, hairColor)}
 
           {/* eyes */}
           <mesh position={[-0.12, 0.02, 0.29]} castShadow>
@@ -105,7 +105,7 @@ export default function HeroRig3D({
         </group>
       </group>
 
-      {/* ---- Arms (parented to torso so they follow breathing) ---- */}
+      {/* ---- Arms ---- */}
       <group ref={gLA} position={[-0.58, 0.95, 0]}>
         <Arm skin={skin} sleeve={shirt} mirror={false} />
       </group>
@@ -113,7 +113,7 @@ export default function HeroRig3D({
         <Arm skin={skin} sleeve={shirt} mirror />
       </group>
 
-      {/* ---- Legs (root space; pelvis near y ~0.46) ---- */}
+      {/* ---- Legs ---- */}
       <group ref={gLL} position={[-0.22, 0.46, 0]}>
         <Leg pants={pants} skin={skin} shoes={shoes} />
       </group>
@@ -121,7 +121,7 @@ export default function HeroRig3D({
         <Leg pants={pants} skin={skin} shoes={shoes} />
       </group>
 
-      {/* win FX */}
+      {/* Simple win FX for Astro */}
       {preset?.outfitId === "outfit_astro" && (
         <mesh position={[0, 1.15, -0.28]} rotation={[0, 0, Math.PI / 10]} castShadow>
           <boxGeometry args={[1.0, 0.06, 0.06]} />
@@ -147,7 +147,7 @@ function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: 
         )}
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
-      {/* short sleeve */}
+      {/* sleeve */}
       <mesh position={[side * 0.08, -0.05, 0]} scale={[1.06, 0.6, 1.06]} castShadow>
         {(THREE as any).CapsuleGeometry ? (
           <capsuleGeometry args={[0.12, 0.18, 8, 12]} />
@@ -210,47 +210,98 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
 
 /* ---------------- helpers ---------------- */
 
+/**
+ * Hair: produce very clear silhouettes.
+ * Head radius is ~0.34, head center at y ~ 0.
+ */
 function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
-  const y = 0.12;
+  const R = 0.34;
+  const yTop = 0.12; // crown shift
+
   switch (style) {
-    case "Buzz":
+    /** CLOSE-CUT CAP that reads as "short hair" */
+    case "Short":
       return (
-        <mesh position={[0, y, 0]} castShadow>
-          <sphereGeometry args={[0.34, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={color} roughness={0.85} />
-        </mesh>
+        <group>
+          {/* cap ring (sides) */}
+          <mesh position={[0, yTop + 0.02, 0]} castShadow>
+            <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+          {/* top disk */}
+          <mesh position={[0, yTop + 0.12, 0]} castShadow>
+            <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+        </group>
       );
+
+    /** PONYTAIL: a headband + tube of hair behind */
+    case "Ponytail":
+      return (
+        <group>
+          {/* headband */}
+          <mesh position={[0, yTop + 0.04, 0]} castShadow>
+            <torusGeometry args={[R + 0.02, 0.03, 16, 48]} />
+            <meshStandardMaterial color={color} roughness={0.75} />
+          </mesh>
+          {/* crown hair */}
+          <mesh position={[0, yTop + 0.05, 0]} castShadow>
+            <sphereGeometry args={[R + 0.02, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.2]} />
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+          {/* ponytail tube */}
+          <mesh position={[0, yTop - 0.03, -0.22]} rotation={[0.35, 0, 0]} castShadow>
+            {(THREE as any).CapsuleGeometry ? (
+              <capsuleGeometry args={[0.09, 0.45, 8, 12]} />
+            ) : (
+              <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
+            )}
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+        </group>
+      );
+
+    /** CURLY: clusters of balls around the crown */
     case "Curly":
       return (
-        <group position={[0, y + 0.02, 0]}>
-          {[-0.18, 0, 0.18].map((x, i) => (
-            <mesh key={i} position={[x, 0.03, -0.02]} castShadow>
-              <sphereGeometry args={[0.18, 16, 16]} />
-              <meshStandardMaterial color={color} roughness={0.75} />
+        <group position={[0, yTop + 0.02, 0]}>
+          {[
+            [-0.20, 0.06, 0.00], [0, 0.08, 0.00], [0.20, 0.06, 0.00],
+            [-0.16, 0.03, 0.14], [0.0, 0.04, 0.16], [0.16, 0.03, 0.14],
+            [-0.16, 0.03, -0.14], [0.0, 0.02, -0.16], [0.16, 0.03, -0.14],
+          ].map((p, i) => (
+            <mesh key={i} position={p as any} castShadow>
+              <sphereGeometry args={[0.14, 18, 18]} />
+              <meshStandardMaterial color={color} roughness={0.7} />
             </mesh>
           ))}
         </group>
       );
-    case "Ponytail":
+
+    /** BUZZ: very thin cap hugging the scalp */
+    case "Buzz":
+      return (
+        <mesh position={[0, yTop + 0.01, 0]} castShadow>
+          {/* thin hemisphere slice (thetaLength small) */}
+          <sphereGeometry args={[R + 0.005, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4.5]} />
+          <meshStandardMaterial color={color} roughness={0.9} />
+        </mesh>
+      );
+
+    default:
+      // fallback to Short
       return (
         <group>
-          <mesh position={[0, y + 0.02, -0.01]} castShadow>
-            <cylinderGeometry args={[0.36, 0.33, 0.15, 24]} />
+          <mesh position={[0, yTop + 0.02, 0]} castShadow>
+            <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          <mesh position={[0.23, y - 0.06, -0.1]} rotation={[0, 0, -0.6]} castShadow>
-            <cylinderGeometry args={[0.05, 0.07, 0.45, 12]} />
+          <mesh position={[0, yTop + 0.12, 0]} castShadow>
+            <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
-      );
-    case "Short":
-    default:
-      return (
-        <mesh position={[0, y + 0.02, 0]} castShadow>
-          <cylinderGeometry args={[0.38, 0.34, 0.18, 24]} />
-          <meshStandardMaterial color={color} roughness={0.8} />
-        </mesh>
       );
   }
 }
@@ -302,12 +353,6 @@ function skinHex(s?: AvatarPreset["skin"]) {
     default:           return "#e9bda1";
   }
 }
-function outfitTop(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#1e2a44" : "#21407a";
-}
-function outfitBottom(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#2a3b5e" : "#1b335f";
-}
-function outfitShoes(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#2a9dad" : "#0ea5e9";
-}
+function outfitTop(id?: AvatarPreset["outfitId"])     { return id === "outfit_astro" ? "#1e2a44" : "#21407a"; }
+function outfitBottom(id?: AvatarPreset["outfitId"])  { return id === "outfit_astro" ? "#2a3b5e" : "#1b335f"; }
+function outfitShoes(id?: AvatarPreset["outfitId"])   { return id === "outfit_astro" ? "#2a9dad" : "#0ea5e9"; }
