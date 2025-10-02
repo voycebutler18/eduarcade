@@ -13,7 +13,7 @@ import ChatPanel from "./features/chat/ChatPanel";
 import DailySpin from "./features/rewards/DailySpin";
 import QuestsPanel from "./features/quests/QuestsPanel";
 import ProgressCard from "./features/progress/ProgressCard";
-import Avatar3D from "./features/avatar/Avatar3D";
+import HeroRig3D from "./features/avatar/HeroRig3D";
 
 /** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -88,7 +88,6 @@ export default function App() {
   /** ---------------- Avatar Studio modal + saved preset ---------------- */
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(() => {
-    // hydrate from localStorage so it persists across reloads
     try {
       const raw = localStorage.getItem("eva_avatar_preset");
       return raw ? (JSON.parse(raw) as AvatarPreset) : null;
@@ -128,17 +127,17 @@ export default function App() {
 
       {/* 3D stage */}
       <section className="stage">
-        <Canvas camera={{ position: [3, 3, 3], fov: 55 }}>
-          <ambientLight intensity={0.8} />
+        <Canvas camera={{ position: [3.2, 2.9, 3.2], fov: 55 }}>
+          <ambientLight intensity={0.9} />
           <directionalLight position={[5, 8, 5]} intensity={1.2} />
           <Sky sunPosition={[100, 20, 100]} />
 
-          {/* Your hero in 3D */}
+          {/* Your hero in 3D (procedural rig) */}
           <group position={[0, -0.6, 0]}>
-            <Avatar3D preset={avatarPreset} />
+            <HeroRig3D preset={avatarPreset} />
           </group>
 
-          {/* Keep the cube around it for some life */}
+          {/* Keep the cube as a nice accent */}
           <group position={[1.9, 0.2, -0.8]} scale={0.6}>
             <SpinningBlock />
           </group>
