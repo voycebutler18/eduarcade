@@ -1,6 +1,8 @@
+import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
 import { useRef, useState } from "react";
+import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -8,8 +10,8 @@ function SpinningBlock() {
     <mesh
       ref={ref}
       rotation={[0.4, 0.6, 0]}
-      onPointerOver={(e) => (document.body.style.cursor = "pointer")}
-      onPointerOut={(e) => (document.body.style.cursor = "default")}
+      onPointerOver={() => (document.body.style.cursor = "pointer")}
+      onPointerOut={() => (document.body.style.cursor = "default")}
     >
       <boxGeometry args={[1.4, 1.4, 1.4]} />
       <meshStandardMaterial metalness={0.2} roughness={0.4} />
@@ -19,6 +21,26 @@ function SpinningBlock() {
 
 export default function App() {
   const [tab, setTab] = useState<"play" | "build" | "avatar" | "store">("play");
+
+  // Quiz Gate modal + result
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
+  const cleared = lastQuiz?.passed ?? false;
+
+  // Mock queue state for MVP feel
+  const [queueing, setQueueing] = useState(false);
+  function mockQueue() {
+    if (!cleared) {
+      setQuizOpen(true);
+      return;
+    }
+    setQueueing(true);
+    // fake 1.2s queue then land “in match”
+    setTimeout(() => {
+      setQueueing(false);
+      alert("✅ Joined mock lobby! (We’ll wire realtime next.)");
+    }, 1200);
+  }
 
   return (
     <div className="app">
@@ -63,7 +85,7 @@ export default function App() {
           <OrbitControls enablePan={false} />
         </Canvas>
 
-        {/* Right-side panel placeholder */}
+        {/* Right-side panel */}
         <aside className="panel">
           {tab === "play" && (
             <div>
@@ -72,7 +94,17 @@ export default function App() {
                 <li>🏁 Party Runs (Obby sprints)</li>
                 <li>🧩 Team Trials (Co-op puzzles)</li>
               </ul>
-              <button className="primary">Queue (5-Q Skill Check)</button>
+
+              <button className="primary" onClick={() => (cleared ? mockQueue() : setQuizOpen(true))}>
+                {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
+              </button>
+
+              <p className="muted small" style={{ marginTop: 8 }}>
+                {cleared
+                  ? `Cleared in ${lastQuiz?.subject} • ${lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
+                    } (${lastQuiz?.correctCount}/5)`
+                  : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
+              </p>
             </div>
           )}
 
@@ -106,6 +138,22 @@ export default function App() {
       <footer className="footer">
         <span>Prototype • Vite + React + R3F</span>
       </footer>
+
+      {/* Quiz modal */}
+      <QuizGate
+        open={quizOpen}
+        onClose={(res) => {
+          if (!res) {
+            setQuizOpen(false);
+            return;
+          }
+          setLastQuiz(res);
+          setQuizOpen(false);
+          if (res.passed) {
+            // optional toast could go here
+          }
+        }}
+      />
     </div>
   );
 }
