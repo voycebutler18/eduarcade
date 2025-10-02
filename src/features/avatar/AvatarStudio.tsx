@@ -1,3 +1,4 @@
+// src/features/avatar/AvatarStudio.tsx
 import * as THREE from "three";
 import React from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
@@ -18,12 +19,12 @@ const EXPRS: AvatarPreset["expr"][] = ["Neutral", "Smile", "Wow", "Determined"];
 const VIEW: Record<ViewKey, THREE.Vector3> = {
   Full:  new THREE.Vector3(3.4, 2.2, 3.4),
   Front: new THREE.Vector3(0.0, 1.25, 1.35),
-  Left:  new THREE.VectorVector3(-1.35, 1.15, 0.0),
+  Left:  new THREE.Vector3(-1.35, 1.15, 0.0),   // <- fixed typo
   Right: new THREE.Vector3( 1.35, 1.15, 0.0),
   Back:  new THREE.Vector3(0.0, 1.25, -1.35),
 };
 
-/* camera tweener (inside Canvas) */
+/* camera tweener (runs inside <Canvas/>) */
 function CameraRig({ to }: { to: THREE.Vector3 }) {
   const { camera } = useThree();
   const look = React.useMemo(() => new THREE.Vector3(0, 1.0, 0), []);
@@ -54,7 +55,10 @@ export default function AvatarStudio({ open, onClose }: Props) {
       outfitId: "outfit_runner",
     }
   );
-  React.useEffect(() => { if (open) setWork(preset ?? work); /* eslint-disable-next-line */ }, [open]);
+  React.useEffect(() => {
+    if (open) setWork(preset ?? work);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const [view, setView] = React.useState<ViewKey>("Front");
 
