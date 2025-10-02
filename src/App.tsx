@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
@@ -10,7 +10,22 @@ import StorePanel from "./features/store/StorePanel";
 import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
 import BuildWorlds from "./features/build/BuildWorlds";
 import ChatPanel from "./features/chat/ChatPanel";
+import DailySpin from "./features/rewards/DailySpin";
 
+/** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
+type Tab = "play" | "build" | "avatar" | "store";
+const TAB_HASH: Record<Tab, `#/${Tab}`> = {
+  play: "#/play",
+  build: "#/build",
+  avatar: "#/avatar",
+  store: "#/store",
+};
+function hashToTab(hash: string): Tab {
+  const v = hash.replace(/^#\//, "") as Tab;
+  return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
+}
+
+/** ---------------- Small demo mesh ---------------- */
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
   return (
@@ -27,18 +42,29 @@ function SpinningBlock() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<"play" | "build" | "avatar" | "store">("play");
+  /** ---------------- Routing (tabs) ---------------- */
+  const [tab, setTab] = useState<Tab>(() => hashToTab(window.location.hash || "#/play"));
+  useEffect(() => {
+    const onHash = () => setTab(hashToTab(window.location.hash || "#/play"));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  function go(next: Tab) {
+    const h = TAB_HASH[next];
+    if (window.location.hash !== h) window.location.hash = h;
+    setTab(next);
+  }
 
-  // Quiz Gate modal + result
+  /** ---------------- Quiz gate state ---------------- */
   const [quizOpen, setQuizOpen] = useState(false);
   const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
   const cleared = lastQuiz?.passed ?? false;
 
-  // Profile data
+  /** ---------------- Profile data ---------------- */
   const age = useAge();
   const username = useUsername();
 
-  // Mock queue state for MVP feel
+  /** ---------------- Mock queue state (MVP) ---------------- */
   const [queueing, setQueueing] = useState(false);
   function mockQueue() {
     if (age == null) {
@@ -56,11 +82,11 @@ export default function App() {
     }, 1200);
   }
 
-  // Avatar Studio modal
+  /** ---------------- Avatar Studio modal ---------------- */
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(null);
 
-  // School Mode (tight chat / disable voice). Local toggle for MVP.
+  /** ---------------- School Mode (tight chat / no voice) ---------------- */
   const [schoolMode, setSchoolMode] = useState(false);
 
   return (
@@ -69,28 +95,16 @@ export default function App() {
       <header className="topbar">
         <div className="brand">EduVerse Arena</div>
         <nav className="tabs">
-          <button
-            className={tab === "play" ? "tab active" : "tab"}
-            onClick={() => setTab("play")}
-          >
+          <button className={tab === "play" ? "tab active" : "tab"} onClick={() => go("play")}>
             Play
           </button>
-          <button
-            className={tab === "build" ? "tab active" : "tab"}
-            onClick={() => setTab("build")}
-          >
+          <button className={tab === "build" ? "tab active" : "tab"} onClick={() => go("build")}>
             Build Worlds
           </button>
-          <button
-            className={tab === "avatar" ? "tab active" : "tab"}
-            onClick={() => setTab("avatar")}
-          >
+          <button className={tab === "avatar" ? "tab active" : "tab"} onClick={() => go("avatar")}>
             Create-Your-Hero
           </button>
-          <button
-            className={tab === "store" ? "tab active" : "tab"}
-            onClick={() => setTab("store")}
-          >
+          <button className={tab === "store" ? "tab active" : "tab"} onClick={() => go("store")}>
             Store
           </button>
         </nav>
@@ -111,8 +125,9 @@ export default function App() {
           <OrbitControls enablePan={false} />
         </Canvas>
 
-        {/* Right-side panel */}
+        {/* Right-side panel (routes) */}
         <aside className="panel">
+          {/* ---- PLAY ---- */}
           {tab === "play" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
@@ -135,7 +150,7 @@ export default function App() {
                 </p>
               </div>
 
-              {/* School Mode toggle (tighten chat & disable PTT) */}
+              {/* School Mode toggle */}
               <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
                   type="checkbox"
@@ -150,24 +165,35 @@ export default function App() {
             </div>
           )}
 
+          {/* ---- BUILD ---- */}
           {tab === "build" && <BuildWorlds />}
 
+          {/* ---- AVATAR ---- */}
           {tab === "avatar" && (
             <div>
               <h2>Create-Your-Hero</h2>
               <p>Live 3D avatar editor (body, skin, hair, eyes, outfits, trails, win FX).</p>
-              <button className="primary" onClick={() => setAvatarOpen(true)}>Open Studio</button>
+              <button className="primary" onClick={() => setAvatarOpen(true)}>
+                Open Studio
+              </button>
 
               {avatarPreset && (
                 <div className="muted small" style={{ marginTop: 8 }}>
-                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair • {avatarPreset.eyes} eyes • {avatarPreset.expr}
+                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair •{" "}
+                  {avatarPreset.eyes} eyes • {avatarPreset.expr}
                   {avatarPreset.outfitId ? ` • outfit=${avatarPreset.outfitId}` : ""}
                 </div>
               )}
             </div>
           )}
 
-          {tab === "store" && <StorePanel />}
+          {/* ---- STORE ---- */}
+          {tab === "store" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <DailySpin />
+              <StorePanel />
+            </div>
+          )}
         </aside>
       </section>
 
