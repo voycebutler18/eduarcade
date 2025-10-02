@@ -6,6 +6,7 @@ import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
 import { useAge } from "./state/profile";
 import StorePanel from "./features/store/StorePanel";
+import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -51,6 +52,10 @@ export default function App() {
       alert(`✅ Joined mock lobby for age band ${age - 1}–${age + 1}. (Realtime next.)`);
     }, 1200);
   }
+
+  // Avatar Studio modal
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(null);
 
   return (
     <div className="app">
@@ -138,7 +143,13 @@ export default function App() {
             <div>
               <h2>Create-Your-Hero</h2>
               <p>Live 3D avatar editor (body, skin, hair, eyes, outfits, trails, win FX).</p>
-              <button className="primary">Open Studio</button>
+              <button className="primary" onClick={() => setAvatarOpen(true)}>Open Studio</button>
+
+              {avatarPreset && (
+                <div className="muted small" style={{ marginTop: 8 }}>
+                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair • {avatarPreset.eyes} eyes • {avatarPreset.expr}{avatarPreset.outfitId ? ` • outfit=${avatarPreset.outfitId}` : ""}
+                </div>
+              )}
             </div>
           )}
 
@@ -162,6 +173,14 @@ export default function App() {
           setLastQuiz(res);
           setQuizOpen(false);
         }}
+      />
+
+      {/* Avatar Studio modal */}
+      <AvatarStudio
+        open={avatarOpen}
+        onClose={() => setAvatarOpen(false)}
+        initial={avatarPreset ?? undefined}
+        onSave={(preset) => setAvatarPreset(preset)}
       />
     </div>
   );
