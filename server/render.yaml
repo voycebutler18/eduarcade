@@ -1,0 +1,44 @@
+services:
+  # ──────────────────────────────────────────
+  # Frontend: Vite static site
+  # ──────────────────────────────────────────
+  - type: static_site
+    name: eduverse-frontend
+    env: node
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_APP_NAME
+        value: EduVerse Arena
+      - key: VITE_APP_VERSION
+        value: 0.1.0
+      # IMPORTANT: point your frontend at the API service below
+      - key: VITE_HINTS_API_URL
+        value: https://eduverse-api.onrender.com/api/hint
+
+  # ──────────────────────────────────────────
+  # Backend: Node API (Express)
+  # ──────────────────────────────────────────
+  - type: web
+    name: eduverse-api
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        value: "*"
