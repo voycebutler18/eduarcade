@@ -1,24 +1,18 @@
 // src/features/player/PlayerController.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, RefObject } from "react";
 import { type Collider } from "../campus/OutdoorWorld3D";
-
-/**
- * Top-down 2D controller on XZ plane.
- * - WASD / Arrow keys
- * - Constant speed
- * - Collides against Box/Circle colliders
- * - Renders your avatar (children) at the player position
- */
 
 type Vec2 = { x: number; z: number };
 
 type Props = {
   start?: Vec2;
-  speed?: number;      // meters per second
-  radius?: number;     // player radius for collision
+  speed?: number;
+  radius?: number;
   colliders?: Collider[];
   onMove?: (pos: Vec2) => void;
-  children?: React.ReactNode; // render your HeroRig3D here
+  children?: React.ReactNode;
+  /** Ref to the moving group so cameras can follow it safely */
+  nodeRef?: RefObject<THREE.Object3D>;
 };
 
 export default function PlayerController({
@@ -28,17 +22,16 @@ export default function PlayerController({
   colliders = [],
   onMove,
   children,
+  nodeRef,
 }: Props) {
-  // Render state (only updated when position actually changes)
   const [renderPos, setRenderPos] = useState<Vec2>(start);
 
-  // Internal refs so we keep a single, stable RAF loop
   const posRef = useRef<Vec2>(start);
   const keysRef = useRef<Record<string, boolean>>({});
   const collidersRef = useRef<Collider[]>(colliders);
   collidersRef.current = colliders;
 
-  // Key handling (prevent page scroll on Arrow keys)
+  // prevent page scroll on arrows
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
@@ -64,7 +57,6 @@ export default function PlayerController({
     };
   }, []);
 
-  // Single RAF loop
   useEffect(() => {
     let last = performance.now();
     let raf = 0;
@@ -92,15 +84,9 @@ export default function PlayerController({
         let nx = p.x + vx;
         let nz = p.z;
 
-        // collide X
-        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) {
-          nx = p.x;
-        }
-        // then Z
+        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) nx = p.x;
         nz = p.z + vz;
-        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) {
-          nz = p.z;
-        }
+        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) nz = p.z;
 
         if (nx !== p.x || nz !== p.z) {
           const np = { x: nx, z: nz };
@@ -118,9 +104,7 @@ export default function PlayerController({
   }, [onMove, radius, speed]);
 
   return (
-    <group position={[renderPos.x, 0, renderPos.z]}>
-      {/* If you pass your avatar as children, it renders here.
-          Otherwise show a small fallback capsule. */}
+    <group ref={nodeRef as any} position={[renderPos.x, 0, renderPos.z]}>
       {children ?? (
         <mesh position={[0, 0.45, 0]} castShadow>
           <cylinderGeometry args={[radius, radius, 0.9, 16]} />
@@ -131,8 +115,7 @@ export default function PlayerController({
   );
 }
 
-/* -------- collision helpers -------- */
-
+/* ---- collisions ---- */
 function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
@@ -140,7 +123,6 @@ function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
       const dz = p.z - c.z;
       if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
     } else {
-      // box: axis-aligned
       const hw = c.w / 2;
       const hd = c.d / 2;
       const cx = clamp(p.x, c.x - hw, c.x + hw);
