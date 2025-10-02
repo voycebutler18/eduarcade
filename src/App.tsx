@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
 import { useAge } from "./state/profile";
+import StorePanel from "./features/store/StorePanel";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -141,17 +142,7 @@ export default function App() {
             </div>
           )}
 
-          {tab === "store" && (
-            <div>
-              <h2>Store</h2>
-              <p>
-                Cosmetics only. Everyone starts with <strong>1,000 Coins</strong>.
-              </p>
-              <button className="primary" onClick={() => alert("Store UI coming next.")}>
-                Browse Items
-              </button>
-            </div>
-          )}
+          {tab === "store" && <StorePanel />}
         </aside>
       </section>
 
