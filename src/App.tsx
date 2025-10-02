@@ -12,6 +12,7 @@ import BuildWorlds from "./features/build/BuildWorlds";
 import ChatPanel from "./features/chat/ChatPanel";
 import DailySpin from "./features/rewards/DailySpin";
 import QuestsPanel from "./features/quests/QuestsPanel";
+import ProgressCard from "./features/progress/ProgressCard";
 
 /** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -166,6 +167,12 @@ export default function App() {
 
               {/* Room Chat */}
               <ChatPanel username={username || "Player"} schoolMode={schoolMode} />
+
+              {/* Printable Progress */}
+              <div>
+                <h3 style={{ margin: "8px 0 6px" }}>Printable Progress</h3>
+                <ProgressCard />
+              </div>
             </div>
           )}
 
