@@ -2,11 +2,13 @@ import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
 import { useRef, useState } from "react";
+
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
 import { useAge } from "./state/profile";
 import StorePanel from "./features/store/StorePanel";
 import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
+import BuildWorlds from "./features/build/BuildWorlds";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -129,15 +131,7 @@ export default function App() {
             </div>
           )}
 
-          {tab === "build" && (
-            <div>
-              <h2>Build Worlds</h2>
-              <p>
-                Create obstacle courses, puzzles, and cooperative classrooms with safe templates.
-              </p>
-              <button className="primary">New Map</button>
-            </div>
-          )}
+          {tab === "build" && <BuildWorlds />}
 
           {tab === "avatar" && (
             <div>
@@ -147,7 +141,8 @@ export default function App() {
 
               {avatarPreset && (
                 <div className="muted small" style={{ marginTop: 8 }}>
-                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair • {avatarPreset.eyes} eyes • {avatarPreset.expr}{avatarPreset.outfitId ? ` • outfit=${avatarPreset.outfitId}` : ""}
+                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair • {avatarPreset.eyes} eyes • {avatarPreset.expr}
+                  {avatarPreset.outfitId ? ` • outfit=${avatarPreset.outfitId}` : ""}
                 </div>
               )}
             </div>
