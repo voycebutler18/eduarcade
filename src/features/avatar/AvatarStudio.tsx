@@ -1,407 +1,204 @@
-import * as THREE from "three";
-import { GroupProps, useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import { AvatarPreset } from "../../state/avatar";
+import React, { useMemo, useState } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, ContactShadows, Sky } from "@react-three/drei";
+import HeroRig3D from "./HeroRig3D";
+import { useAvatar, AvatarPreset } from "../../state/avatar";
+import { useInventory } from "../../state/inventory";
 
-/**
- * HeroRig3D
- * - All pieces are original geometry (no external assets).
- * - Head is parented to torso so nothing floats.
- * - Hair/eye/mouth styles 1:1 with UI buttons.
- * - Small emissive on facial features so they remain visible.
- */
+type Props = { open: boolean; onClose: () => void };
 
-export default function HeroRig3D({
-  preset,
-  ...props
-}: GroupProps & { preset: AvatarPreset | null }) {
-  const root = useRef<THREE.Group>(null!);
-  const gTorso = useRef<THREE.Group>(null!);
-  const gHead = useRef<THREE.Group>(null!);
-  const gLA = useRef<THREE.Group>(null!);
-  const gRA = useRef<THREE.Group>(null!);
-  const gLL = useRef<THREE.Group>(null!);
-  const gRL = useRef<THREE.Group>(null!);
+const SKINS: AvatarPreset["skin"][] = ["Very Light", "Light", "Tan", "Deep", "Rich"];
+const BODIES: AvatarPreset["body"][] = ["Slim", "Standard", "Athletic"];
+const HAIRS: AvatarPreset["hair"][] = ["Short", "Ponytail", "Curly", "Buzz"];
+const EYES: AvatarPreset["eyes"][] = ["Round", "Sharp", "Happy"];
+const EXPRS: AvatarPreset["expr"][] = ["Neutral", "Smile", "Wow", "Determined"];
 
-  // palette from preset
-  const skin = useMemo(() => skinHex(preset?.skin), [preset?.skin]);
-  const hairColor = "#27334d";
-  const top = useMemo(() => outfitTop(preset?.outfitId), [preset?.outfitId]);
-  const bottom = useMemo(() => outfitBottom(preset?.outfitId), [preset?.outfitId]);
-  const shoe = useMemo(() => outfitShoes(preset?.outfitId), [preset?.outfitId]);
-  const bodyScale = useMemo(() => bodyScaleFor(preset?.body), [preset?.body]);
+export default function AvatarStudio({ open, onClose }: Props) {
+  if (!open) return null;
 
-  // idle
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    root.current.rotation.y = Math.sin(t * 1.4) * 0.05;
-    gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * 0.012;
-    gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * 0.06;
-    gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * 0.06;
-    gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * 0.04;
-    gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * 0.04;
-  });
+  const { preset, setPreset } = useAvatar();
+  const inv = useInventory();
+
+  // local draft
+  const [draft, setDraft] = useState<AvatarPreset>({ ...preset });
+
+  function choose<K extends keyof AvatarPreset>(key: K, val: AvatarPreset[K]) {
+    setDraft((d) => ({ ...d, [key]: val }));
+  }
+
+  function save() {
+    setPreset(draft);
+    onClose();
+  }
+
+  const ownRunner = inv.isOwned("outfit_runner");
+  const ownAstro = inv.isOwned("outfit_astro");
 
   return (
-    <group ref={root} {...props} scale={bodyScale} castShadow receiveShadow>
-      {/* ---- Torso group (head/neck are children) ---- */}
-      <group ref={gTorso} position={[0, 0.9, 0]}>
-        <mesh castShadow receiveShadow>
-          {(THREE as any).CapsuleGeometry ? (
-            <capsuleGeometry args={[0.46, 0.64, 8, 16]} />
-          ) : (
-            <boxGeometry args={[0.92, 1.1, 0.5]} />
-          )}
-          <meshStandardMaterial color={"#1b2b4b"} roughness={0.7} metalness={0.05} />
-        </mesh>
+    <div className="studio-overlay" role="dialog" aria-modal="true">
+      <div className="studio">
+        <div className="title">Create-Your-Hero</div>
 
-        {/* shirt */}
-        <mesh position={[0, 0.01, 0]} scale={[1.015, 1.02, 1.02]} castShadow receiveShadow>
-          {(THREE as any).CapsuleGeometry ? (
-            <capsuleGeometry args={[0.47, 0.66, 8, 16]} />
-          ) : (
-            <boxGeometry args={[0.94, 1.12, 0.52]} />
-          )}
-          <meshStandardMaterial color={top} roughness={0.5} metalness={0.08} />
-        </mesh>
+        <div className="content">
+          {/* LEFT: 3D Preview — All R3F/Drei is INSIDE Canvas */}
+          <div className="preview">
+            <Canvas
+              shadows
+              camera={{ position: [2.3, 2.0, 2.3], fov: 55 }}
+              gl={{ antialias: true }}
+            >
+              <ambientLight intensity={0.5} />
+              <directionalLight
+                position={[5, 8, 5]}
+                intensity={1.2}
+                castShadow
+                shadow-mapSize-width={2048}
+                shadow-mapSize-height={2048}
+              />
+              <Sky sunPosition={[100, 20, 100]} />
 
-        {/* neck */}
-        <mesh position={[0, 0.64, 0]} castShadow>
-          <cylinderGeometry args={[0.12, 0.12, 0.14, 16]} />
-          <meshStandardMaterial color={skin} roughness={0.85} />
-        </mesh>
+              {/* ground */}
+              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+                <planeGeometry args={[20, 20]} />
+                <meshStandardMaterial color={"#b7c0c9"} roughness={0.95} />
+              </mesh>
+              <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.0} far={8} />
 
-        {/* head (child => never floats) */}
-        <group ref={gHead} position={[0, 0.85, 0]}>
-          <mesh castShadow>
-            <sphereGeometry args={[0.34, 32, 32]} />
-            <meshStandardMaterial color={skin} roughness={0.85} />
-          </mesh>
+              {/* hero */}
+              <group position={[0, 0, 0]}>
+                <HeroRig3D preset={draft} />
+              </group>
 
-          {/* hair */}
-          {buildHair(preset?.hair, hairColor)}
+              <OrbitControls enablePan={false} />
+            </Canvas>
+          </div>
 
-          {/* face */}
-          {buildEyes(preset?.eyes)}
-          {buildBrows(preset?.eyes)}
-          {buildMouth(preset?.expr)}
-        </group>
-      </group>
+          {/* RIGHT: Controls (plain React — no R3F hooks here) */}
+          <div className="panel">
+            <Section title="Body">
+              <PillRow
+                options={BODIES}
+                value={draft.body}
+                onSelect={(v) => choose("body", v)}
+              />
+            </Section>
 
-      {/* ---- Arms ---- */}
-      <group ref={gLA} position={[-0.58, 0.95, 0]}>
-        <Arm skin={skin} sleeve={top} mirror={false} />
-      </group>
-      <group ref={gRA} position={[0.58, 0.95, 0]}>
-        <Arm skin={skin} sleeve={top} mirror />
-      </group>
+            <Section title="Skin tone">
+              <div className="swatches">
+                {SKINS.map((s) => (
+                  <button
+                    key={s}
+                    className={"swatch" + (draft.skin === s ? " active" : "")}
+                    onClick={() => choose("skin", s)}
+                    style={{ background: skinHex(s) }}
+                    title={s}
+                  />
+                ))}
+              </div>
+            </Section>
 
-      {/* ---- Legs ---- */}
-      <group ref={gLL} position={[-0.22, 0.46, 0]}>
-        <Leg pants={bottom} skin={skin} shoes={shoe} />
-      </group>
-      <group ref={gRL} position={[0.22, 0.46, 0]}>
-        <Leg pants={bottom} skin={skin} shoes={shoe} />
-      </group>
+            <Section title="Hair">
+              <PillRow
+                options={HAIRS}
+                value={draft.hair}
+                onSelect={(v) => choose("hair", v)}
+              />
+            </Section>
 
-      {/* Astro “win FX” */}
-      {preset?.outfitId === "outfit_astro" && (
-        <mesh position={[0, 1.15, -0.28]} rotation={[0, 0, Math.PI / 10]} castShadow>
-          <boxGeometry args={[1.0, 0.06, 0.06]} />
-          <meshStandardMaterial color={"#8be9fd"} emissive={"#8be9fd"} emissiveIntensity={0.3} />
-        </mesh>
-      )}
-    </group>
+            <Section title="Eyes">
+              <PillRow
+                options={EYES}
+                value={draft.eyes}
+                onSelect={(v) => choose("eyes", v)}
+              />
+            </Section>
+
+            <Section title="Expression">
+              <PillRow
+                options={EXPRS}
+                value={draft.expr}
+                onSelect={(v) => choose("expr", v)}
+              />
+            </Section>
+
+            <Section title="Outfit (cosmetic)">
+              <div className="outfits">
+                <OutfitCard
+                  title="Runner Set"
+                  owned={ownRunner}
+                  active={draft.outfitId === "outfit_runner"}
+                  onClick={() => ownRunner ? choose("outfitId", "outfit_runner") : alert("Owned by default")}
+                  swatch="#1f3e76"
+                />
+                <OutfitCard
+                  title="Astro Set"
+                  owned={ownAstro}
+                  active={draft.outfitId === "outfit_astro"}
+                  onClick={() => ownAstro ? choose("outfitId", "outfit_astro") : alert("Buy in Store")}
+                  swatch="#2a9dad"
+                />
+              </div>
+            </Section>
+
+            <div className="actions">
+              <button className="ghost" onClick={onClose}>Cancel</button>
+              <button className="primary" onClick={save}>Save</button>
+            </div>
+          </div>
+        </div>
+
+        <button className="close" onClick={onClose} aria-label="Close">×</button>
+      </div>
+
+      <style>{STYLES}</style>
+    </div>
   );
 }
 
-/* ================= parts ================= */
+/* ---------- presentational bits (no R3F hooks) ---------- */
 
-function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: boolean }) {
-  const side = mirror ? -1 : 1;
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <group rotation={[0, 0, side * 0.15]}>
-      {/* upper arm */}
-      <mesh position={[side * 0.08, -0.18, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.11, 0.28, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.11, 0.11, 0.5, 12]} />
-        )}
-        <meshStandardMaterial color={skin} roughness={0.85} />
-      </mesh>
-      {/* short sleeve */}
-      <mesh position={[side * 0.08, -0.05, 0]} scale={[1.06, 0.6, 1.06]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.12, 0.18, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.12, 0.12, 0.3, 12]} />
-        )}
-        <meshStandardMaterial color={sleeve} roughness={0.55} />
-      </mesh>
-      {/* forearm */}
-      <mesh position={[side * 0.12, -0.52, 0]} rotation={[0, 0, side * 0.08]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.105, 0.32, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.105, 0.105, 0.52, 12]} />
-        )}
-        <meshStandardMaterial color={skin} roughness={0.85} />
-      </mesh>
-      {/* hand */}
-      <mesh position={[side * 0.22, -0.75, 0]} castShadow>
-        <sphereGeometry args={[0.1, 16, 16]} />
-        <meshStandardMaterial color={skin} roughness={0.85} />
-      </mesh>
-    </group>
+    <div className="section">
+      <div className="section-title">{title}</div>
+      {children}
+    </div>
   );
 }
 
-function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: string }) {
+function PillRow<T extends string>({
+  options, value, onSelect,
+}: { options: readonly T[]; value: T | undefined; onSelect: (v: T) => void }) {
   return (
-    <group>
-      {/* thigh */}
-      <mesh position={[0, -0.18, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.13, 0.32, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.13, 0.13, 0.5, 12]} />
-        )}
-        <meshStandardMaterial color={pants} roughness={0.6} />
-      </mesh>
-      {/* calf */}
-      <mesh position={[0.02, -0.54, 0]} castShadow>
-        {(THREE as any).CapsuleGeometry ? (
-          <capsuleGeometry args={[0.12, 0.34, 8, 12]} />
-        ) : (
-          <cylinderGeometry args={[0.12, 0.12, 0.54, 12]} />
-        )}
-        <meshStandardMaterial color={pants} roughness={0.6} />
-      </mesh>
-      {/* foot */}
-      <mesh position={[0.05, -0.86, 0.09]} castShadow receiveShadow>
-        <boxGeometry args={[0.32, 0.12, 0.42]} />
-        <meshStandardMaterial color={shoes} roughness={0.35} metalness={0.1} />
-      </mesh>
-      {/* toe cap */}
-      <mesh position={[0.18, -0.86, 0.2]} castShadow>
-        <boxGeometry args={[0.12, 0.08, 0.18]} />
-        <meshStandardMaterial color={"#eeeeee"} />
-      </mesh>
-    </group>
+    <div className="row">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          className={"pill" + (value === opt ? " active" : "")}
+          onClick={() => onSelect(opt)}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
   );
 }
 
-/* ================= face & hair ================= */
-
-const Z_FRONT = 0.305;        // small offset so features never clip
-const E_EM = "#0d1117";       // emissive tint for visibility
-
-function buildHair(style: AvatarPreset["hair"] | undefined, color: string) {
-  const r = 0.34;
-  const y = 0.12;
-
-  switch (style) {
-    case "Short":
-      return (
-        <>
-          <mesh position={[0, y, 0]} castShadow>
-            {/* upper head cap */}
-            <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.65, Math.PI * 0.4]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.02, 0]} castShadow>
-            {/* thin ring around crown */}
-            <cylinderGeometry args={[r * 0.86, r * 0.86, 0.06, 32]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-        </>
-      );
-
-    case "Ponytail":
-      return (
-        <>
-          <mesh position={[0, y + 0.02, 0]} castShadow>
-            <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.55]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.03, -0.32]} rotation={[0.5, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.08, 0.12, 0.6, 16]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.27, -0.55]} castShadow>
-            <sphereGeometry args={[0.12, 16, 16]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-        </>
-      );
-
-    case "Curly":
-      return (
-        <group position={[0, y + 0.02, 0]}>
-          {[-0.18, -0.06, 0.06, 0.18].map((x, i) => (
-            <mesh key={"c" + i} position={[x, 0.06, -0.02]} castShadow>
-              <sphereGeometry args={[0.14, 16, 16]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
-            </mesh>
-          ))}
-          {[-0.12, 0.12].map((x, i) => (
-            <mesh key={"c2" + i} position={[x, -0.02, 0.12]} castShadow>
-              <sphereGeometry args={[0.12, 16, 16]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
-            </mesh>
-          ))}
-        </group>
-      );
-
-    case "Buzz":
-      return (
-        <mesh position={[0, y + 0.01, 0]} castShadow>
-          <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.78, Math.PI * 0.35]} />
-          <meshStandardMaterial color={color} roughness={0.9} />
-        </mesh>
-      );
-
-    default:
-      return null;
-  }
-}
-
-function buildEyes(kind: AvatarPreset["eyes"] | undefined) {
-  const white = "#f2f6ff";
-  const black = "#0b0f16";
-  const lx = -0.12, rx = 0.12, y = 0.02, z = Z_FRONT;
-
-  switch (kind) {
-    // Open, round eyes
-    case "Round":
-      return (
-        <group>
-          {/* sclera */}
-          <mesh position={[lx, y, z]}>
-            <sphereGeometry args={[0.052, 20, 20]} />
-            <meshStandardMaterial color={white} roughness={1} />
-          </mesh>
-          <mesh position={[rx, y, z]}>
-            <sphereGeometry args={[0.052, 20, 20]} />
-            <meshStandardMaterial color={white} roughness={1} />
-          </mesh>
-          {/* pupils */}
-          <mesh position={[lx, y, z + 0.002]}>
-            <sphereGeometry args={[0.026, 20, 20]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} />
-          </mesh>
-          <mesh position={[rx, y, z + 0.002]}>
-            <sphereGeometry args={[0.026, 20, 20]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} />
-          </mesh>
-        </group>
-      );
-
-    // Almond/slanted eyes
-    case "Sharp":
-      return (
-        <group>
-          {[lx, rx].map((x, i) => (
-            <mesh key={i} position={[x, y + 0.004, z]} rotation={[0, 0, i === 0 ? 0.15 : -0.15]}>
-              <sphereGeometry args={[0.06, 20, 20]} />
-              <meshStandardMaterial color={white} roughness={1} />
-            </mesh>
-          ))}
-          {[lx, rx].map((x, i) => (
-            <mesh key={"p" + i} position={[x, y, z + 0.003]}>
-              <sphereGeometry args={[0.022, 20, 20]} />
-              <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} />
-            </mesh>
-          ))}
-        </group>
-      );
-
-    // Happy (crescent eyes)
-    case "Happy":
-      return (
-        <group>
-          <mesh position={[lx, y + 0.015, z + 0.002]} rotation={[0, 0, Math.PI * 0.95]}>
-            <torusGeometry args={[0.055, 0.012, 8, 24, Math.PI * 0.8]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-          </mesh>
-          <mesh position={[rx, y + 0.015, z + 0.002]} rotation={[0, 0, Math.PI * 0.05]}>
-            <torusGeometry args={[0.055, 0.012, 8, 24, Math.PI * 0.8]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-          </mesh>
-        </group>
-      );
-
-    default:
-      return null;
-  }
-}
-
-function buildBrows(kind: AvatarPreset["eyes"] | undefined) {
-  const z = Z_FRONT - 0.002;
-  let tilt = 0, arch = 0;
-  if (kind === "Sharp") tilt = 0.35;
-  if (kind === "Happy") arch = -0.18;
-
+function OutfitCard({
+  title, owned, active, onClick, swatch,
+}: { title: string; owned: boolean; active: boolean; onClick: () => void; swatch: string }) {
   return (
-    <group>
-      <mesh position={[-0.12, 0.1, z]} rotation={[0, 0, tilt || arch]} castShadow>
-        <boxGeometry args={[0.12, 0.015, 0.02]} />
-        <meshStandardMaterial color={"#0b0f16"} emissive={E_EM} emissiveIntensity={0.25} />
-      </mesh>
-      <mesh position={[0.12, 0.1, z]} rotation={[0, 0, -(tilt || arch)]} castShadow>
-        <boxGeometry args={[0.12, 0.015, 0.02]} />
-        <meshStandardMaterial color={"#0b0f16"} emissive={E_EM} emissiveIntensity={0.25} />
-      </mesh>
-    </group>
+    <button className={"outfit" + (active ? " active" : "")} onClick={onClick}>
+      <div className="chip" style={{ background: swatch }} />
+      <div className="label">
+        <div className="name">{title}</div>
+        <div className="muted">{owned ? "Owned" : "Locked"}</div>
+      </div>
+    </button>
   );
 }
 
-function buildMouth(expr: AvatarPreset["expr"] | undefined) {
-  const black = "#0b0f16";
-  switch (expr) {
-    case "Smile":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]} rotation={[0, 0, Math.PI]}>
-          <torusGeometry args={[0.12, 0.015, 8, 24, Math.PI * 0.85]} />
-          <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-        </mesh>
-      );
-    case "Wow":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]}>
-          <torusGeometry args={[0.05, 0.025, 8, 24, Math.PI * 2]} />
-          <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-        </mesh>
-      );
-    case "Determined":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]} rotation={[0, 0, 0.2]}>
-          <boxGeometry args={[0.18, 0.02, 0.02]} />
-          <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-        </mesh>
-      );
-    case "Neutral":
-    default:
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]}>
-          <boxGeometry args={[0.16, 0.02, 0.02]} />
-          <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-        </mesh>
-      );
-  }
-}
-
-/* ================= helpers ================= */
-
-function bodyScaleFor(body: AvatarPreset["body"] | undefined): number {
-  switch (body) {
-    case "Slim": return 0.98;
-    case "Athletic": return 1.08;
-    case "Standard":
-    default: return 1.02;
-  }
-}
+/* ---------- helpers ---------- */
 
 function skinHex(s?: AvatarPreset["skin"]) {
   switch (s) {
@@ -413,12 +210,36 @@ function skinHex(s?: AvatarPreset["skin"]) {
     default:           return "#e9bda1";
   }
 }
-function outfitTop(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#1e2a44" : "#21407a";
+
+/* ---------- styles ---------- */
+
+const STYLES = `
+.studio-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.studio{position:relative;width:min(1100px,95vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
+.title{font-size:20px;font-weight:800}
+.content{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
+.preview{height:460px;background:#0e162a;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+.panel{display:flex;flex-direction:column;gap:14px}
+.section{display:flex;flex-direction:column;gap:8px}
+.section-title{font-weight:700}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.pill{background:transparent;border:1px solid rgba(255,255,255,.12);color:#e6edf7;border-radius:999px;padding:8px 12px;cursor:pointer}
+.pill.active{background:#1e293b;border-color:#3b82f6}
+.swatches{display:flex;gap:8px}
+.swatch{width:26px;height:26px;border-radius:999px;border:2px solid rgba(255,255,255,.25);cursor:pointer}
+.swatch.active{outline:2px solid #3b82f6}
+.outfits{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.outfit{display:flex;gap:10px;align-items:center;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px;cursor:pointer;text-align:left}
+.outfit.active{border-color:#3b82f6;background:rgba(59,130,246,.08)}
+.chip{width:36px;height:36px;border-radius:8px}
+.label .name{font-weight:700}
+.muted{color:#9fb0c7;font-size:12px}
+.actions{display:flex;gap:8px;justify-content:flex-end}
+.primary{background:#2563eb;color:white;border:none;border-radius:10px;padding:8px 14px;cursor:pointer}
+.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e6edf7;border-radius:10px;padding:8px 14px;cursor:pointer}
+.close{position:absolute;top:6px;right:10px;border:none;background:transparent;color:#9fb0c7;font-size:20px;cursor:pointer}
+@media (max-width: 900px){
+  .content{grid-template-columns:1fr;gap:10px}
+  .preview{height:380px}
 }
-function outfitBottom(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#2a3b5e" : "#1b335f";
-}
-function outfitShoes(id?: AvatarPreset["outfitId"]) {
-  return id === "outfit_astro" ? "#2a9dad" : "#0ea5e9";
-}
+`;
