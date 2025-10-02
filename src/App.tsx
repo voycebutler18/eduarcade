@@ -13,6 +13,7 @@ import ChatPanel from "./features/chat/ChatPanel";
 import DailySpin from "./features/rewards/DailySpin";
 import QuestsPanel from "./features/quests/QuestsPanel";
 import ProgressCard from "./features/progress/ProgressCard";
+import Avatar3D from "./features/avatar/Avatar3D";
 
 /** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -27,7 +28,7 @@ function hashToTab(hash: string): Tab {
   return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
 }
 
-/** ---------------- Small demo mesh ---------------- */
+/** ---------------- Fallback spinning block (kept because you liked it) ---------------- */
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
   return (
@@ -84,9 +85,17 @@ export default function App() {
     }, 1200);
   }
 
-  /** ---------------- Avatar Studio modal ---------------- */
+  /** ---------------- Avatar Studio modal + saved preset ---------------- */
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(null);
+  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(() => {
+    // hydrate from localStorage so it persists across reloads
+    try {
+      const raw = localStorage.getItem("eva_avatar_preset");
+      return raw ? (JSON.parse(raw) as AvatarPreset) : null;
+    } catch {
+      return null;
+    }
+  });
 
   /** ---------------- School Mode (tight chat / no voice) ---------------- */
   const [schoolMode, setSchoolMode] = useState(false);
@@ -123,7 +132,17 @@ export default function App() {
           <ambientLight intensity={0.8} />
           <directionalLight position={[5, 8, 5]} intensity={1.2} />
           <Sky sunPosition={[100, 20, 100]} />
-          <SpinningBlock />
+
+          {/* Your hero in 3D */}
+          <group position={[0, -0.6, 0]}>
+            <Avatar3D preset={avatarPreset} />
+          </group>
+
+          {/* Keep the cube around it for some life */}
+          <group position={[1.9, 0.2, -0.8]} scale={0.6}>
+            <SpinningBlock />
+          </group>
+
           <OrbitControls enablePan={false} />
         </Canvas>
 
@@ -231,7 +250,12 @@ export default function App() {
         open={avatarOpen}
         onClose={() => setAvatarOpen(false)}
         initial={avatarPreset ?? undefined}
-        onSave={(preset) => setAvatarPreset(preset)}
+        onSave={(preset) => {
+          setAvatarPreset(preset);
+          try {
+            localStorage.setItem("eva_avatar_preset", JSON.stringify(preset));
+          } catch {}
+        }}
       />
     </div>
   );
