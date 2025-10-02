@@ -1,24 +1,53 @@
-import { useThree, useFrame } from "@react-three/fiber";
+// src/features/player/FollowCam.tsx
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { RefObject, useMemo } from "react";
 
+/**
+ * Safe follow camera:
+ * - If targetRef.current is missing, it does nothing (prevents crashes)
+ * - Smoothly lerps position toward target + offset, and looks at target
+ */
 export default function FollowCam({
-  target,
-  height = 5,
-  back = 10,
-  lerp = 0.14,
+  targetRef,
+  offset = [0, 4.5, 8],    // behind & above
+  lerp = 0.12,
 }: {
-  target: { x: number; z: number };
-  height?: number;
-  back?: number;
+  targetRef: RefObject<THREE.Object3D>;
+  offset?: [number, number, number];
   lerp?: number;
 }) {
   const { camera } = useThree();
 
+  // Reuse vectors, avoid GC
+  const helpers = useMemo(
+    () => ({
+      targetPos: new THREE.Vector3(),
+      desired: new THREE.Vector3(),
+      off: new THREE.Vector3(...offset),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // If offset prop changes later, update the helper
+  helpers.off.set(offset[0], offset[1], offset[2]);
+
   useFrame(() => {
-    // position camera slightly behind + above the player
-    const want = new THREE.Vector3(target.x, height, target.z + back);
-    camera.position.lerp(want, lerp);
-    camera.lookAt(target.x, 1.2, target.z);
+    const t = targetRef.current;
+    if (!t) return; // <-- null-safe
+
+    // where the target is
+    t.getWorldPosition(helpers.targetPos);
+
+    // where we want the camera to be
+    helpers.desired.copy(helpers.targetPos).add(helpers.off);
+
+    // move camera smoothly
+    camera.position.lerp(helpers.desired, lerp);
+
+    // look at the target
+    camera.lookAt(helpers.targetPos);
   });
 
   return null;
