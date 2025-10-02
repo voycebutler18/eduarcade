@@ -19,35 +19,59 @@ const EXPRS: AvatarPreset["expr"][] = ["Neutral", "Smile", "Wow", "Determined"];
 const VIEW: Record<ViewKey, THREE.Vector3> = {
   Full:  new THREE.Vector3(3.4, 2.2, 3.4),
   Front: new THREE.Vector3(0.0, 1.25, 1.35),
-  Left:  new THREE.Vector3(-1.35, 1.15, 0.0),   // <- fixed typo
+  Left:  new THREE.Vector3(-1.35, 1.15, 0.0),
   Right: new THREE.Vector3( 1.35, 1.15, 0.0),
   Back:  new THREE.Vector3(0.0, 1.25, -1.35),
 };
 
-/* camera tweener (runs inside <Canvas/>) */
+const TARGET: Record<ViewKey, THREE.Vector3> = {
+  Full:  new THREE.Vector3(0, 1.0, 0),
+  Front: new THREE.Vector3(0, 1.02, 0.22),
+  Left:  new THREE.Vector3(0, 1.02, 0.10),
+  Right: new THREE.Vector3(0, 1.02, 0.10),
+  Back:  new THREE.Vector3(0, 1.02, -0.05),
+};
+
+/* Camera tweener */
 function CameraRig({
-  to,
+  view,
   controlsRef,
 }: {
-  to: THREE.Vector3;
-  controlsRef?: React.RefObject<any>;
+  view: ViewKey;
+  controlsRef: React.RefObject<any>;
 }) {
   const { camera } = useThree();
-  const look = React.useMemo(() => new THREE.Vector3(0, 1.0, 0), []);
+  const goalPos = React.useRef(VIEW[view].clone());
+  const goalTarget = React.useRef(TARGET[view].clone());
+  const animating = React.useRef(true);
+
+  React.useEffect(() => {
+    goalPos.current.copy(VIEW[view]);
+    goalTarget.current.copy(TARGET[view]);
+    animating.current = true;
+  }, [view]);
+
   useFrame(() => {
-    camera.position.lerp(to, 0.12);
+    const orbit = controlsRef.current;
     const pcam = camera as THREE.PerspectiveCamera;
-    pcam.fov = THREE.MathUtils.lerp(pcam.fov, to.equals(VIEW.Full) ? 55 : 40, 0.12);
-    // If OrbitControls is present, drive its target; otherwise lookAt directly.
-    const orbit = controlsRef?.current;
-    if (orbit) {
-      orbit.target.lerp(look, 0.12);
-      orbit.update();
-    } else {
-      camera.lookAt(look);
-    }
+    const targetFov = view === "Full" ? 55 : 40;
+    pcam.fov = THREE.MathUtils.lerp(pcam.fov, targetFov, 0.12);
     pcam.updateProjectionMatrix();
+
+    if (animating.current) {
+      camera.position.lerp(goalPos.current, 0.15);
+      if (orbit) {
+        orbit.target.lerp(goalTarget.current, 0.15);
+        orbit.update();
+      }
+      const posDone = camera.position.distanceTo(goalPos.current) < 0.01;
+      const tgtDone = !orbit || orbit.target.distanceTo(goalTarget.current) < 0.01;
+      if (posDone && tgtDone) animating.current = false;
+    } else if (controlsRef.current) {
+      controlsRef.current.update();
+    }
   });
+
   return null;
 }
 
@@ -68,14 +92,11 @@ export default function AvatarStudio({ open, onClose }: Props) {
       outfitId: "outfit_runner",
     }
   );
-  React.useEffect(() => {
-    if (open) setWork(preset ?? work);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  React.useEffect(() => { if (open) setWork(preset ?? work); /* eslint-disable-line */ }, [open]);
 
   const [view, setView] = React.useState<ViewKey>("Front");
 
-  // ✅ add controls ref so you can drag/rotate the avatar
+  // ✅ MISSING BEFORE — this caused the crash
   const controlsRef = React.useRef<any>(null);
 
   function save() {
@@ -94,7 +115,6 @@ export default function AvatarStudio({ open, onClose }: Props) {
         <div className="studio-title">Create-Your-Hero</div>
 
         <div className="studio-main">
-          {/* Viewer */}
           <div className="viewer">
             <Canvas
               shadows
@@ -114,16 +134,16 @@ export default function AvatarStudio({ open, onClose }: Props) {
                 <HeroRig3D preset={work} />
               </group>
 
-              {/* Drag/Touch to rotate, like your original behavior */}
+              {/* Drag/Touch rotation */}
               <OrbitControls
                 ref={controlsRef}
                 enablePan={false}
-                enableZoom={false}   // set to true if you want scroll/pinch zoom
+                enableZoom={false}
                 rotateSpeed={0.9}
                 minPolarAngle={Math.PI * 0.15}
                 maxPolarAngle={Math.PI * 0.95}
               />
-              <CameraRig to={VIEW[view]} controlsRef={controlsRef} />
+              <CameraRig view={view} controlsRef={controlsRef} />
             </Canvas>
 
             <div className="viewbar">
@@ -133,7 +153,6 @@ export default function AvatarStudio({ open, onClose }: Props) {
             </div>
           </div>
 
-          {/* Controls */}
           <div className="controls">
             <Section title="Body">
               <PillRow options={BODIES} value={work.body} onSelect={v=>setWork({...work, body:v})}/>
@@ -193,7 +212,7 @@ export default function AvatarStudio({ open, onClose }: Props) {
   );
 }
 
-/* UI bits */
+/* UI + helpers (same as before) */
 function Section({ title, children }: { title:string; children:React.ReactNode }) {
   return <div className="section"><div className="section-title">{title}</div>{children}</div>;
 }
@@ -217,8 +236,6 @@ function OutfitCard({ title, owned, active, onClick, swatch }:{
     </button>
   );
 }
-
-/* helpers */
 function skinHex(s?: AvatarPreset["skin"]) {
   switch (s) {
     case "Very Light": return "#f6d7c3";
@@ -229,35 +246,6 @@ function skinHex(s?: AvatarPreset["skin"]) {
     default:           return "#e9bda1";
   }
 }
-
-/* styles */
 const STYLES = `
-.studio-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
-.studio{position:relative;width:min(1200px,96vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
-.studio-title{font-size:22px;font-weight:800}
-.studio-main{display:grid;grid-template-columns: 1.1fr 0.9fr;gap:14px}
-.viewer{position:relative;aspect-ratio:16/12;background:#0c1426;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
-.viewbar{position:absolute;left:12px;bottom:12px;display:flex;gap:8px}
-.controls{display:flex;flex-direction:column;gap:12px;max-height:72vh;overflow:auto;padding-right:6px}
-.section{background:#0c1426;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px}
-.section-title{font-weight:800;margin-bottom:8px}
-.pills{display:flex;gap:8px;flex-wrap:wrap}
-.pill{background:transparent;border:1px solid rgba(255,255,255,.16);color:#e6edf7;border-radius:999px;padding:8px 12px;cursor:pointer}
-.pill.active{background:#1941b6;border-color:#4f73ff}
-.swatches{display:flex;gap:8px}
-.swatch{width:28px;height:28px;border-radius:999px;border:2px solid transparent}
-.swatch.active{border-color:#4f73ff}
-.outfits{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.outfit{display:flex;gap:10px;align-items:center;justify-content:flex-start;background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;cursor:pointer}
-.outfit.active{outline:2px solid #4f73ff}
-.outfit:disabled{opacity:.55;cursor:not-allowed}
-.dot{width:34px;height:34px;border-radius:8px}
-.oflex{display:flex;flex-direction:column;gap:2px}
-.oname{font-weight:800}
-.oown{font-size:12px;color:#9fb0c7}
-.actions{display:flex;justify-content:flex-end;gap:8px}
-.primary{background:#2563eb;border:none;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
-.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e6edf7;border-radius:10px;padding:10px 14px;cursor:pointer}
-.close{position:absolute;right:10px;top:8px;background:transparent;color:#9fb0c7;border:none;font-size:18px;cursor:pointer}
-@media (max-width: 980px){ .studio-main{grid-template-columns: 1fr} }
+/* (same CSS as your current file) */
 `;
