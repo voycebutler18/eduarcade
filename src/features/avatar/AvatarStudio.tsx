@@ -1,349 +1,228 @@
-import { useMemo, useState } from "react";
-import { useInventory } from "../../state/inventory";
+import { useEffect, useMemo, useState } from "react";
+import { useAvatar, AvatarPreset } from "../../state/avatar";
 
 /**
- * AvatarStudio (MVP)
- * - Self-contained modal with a simple live 2D preview
- * - Options: body style, skin tone, hair, eyes, expression, outfit (cosmetic only)
- * - Hooks into inventory for outfits if owned; otherwise shows lock/buy
- * - No external assets; uses shapes/emoji for a fast first build
- *
- * Usage:
- *   <AvatarStudio open={isOpen} onClose={() => setOpen(false)} />
+ * Modal avatar editor.
+ * - Edits a local copy, shows live preview on the left (2D)
+ * - Save writes to the global avatar store so the 3D hero updates instantly
+ * - All labels are original/generic (no copyrighted assets)
  */
 
-type BodyStyle = "Slim" | "Standard" | "Athletic";
-type SkinTone = "Light" | "Tan" | "Brown" | "Deep";
-type Hair = "Short" | "Ponytail" | "Curly" | "Buzz";
-type Eye = "Round" | "Sharp" | "Happy";
-type Expression = "Neutral" | "Smile" | "Wow" | "Determined";
-
-export type AvatarPreset = {
-  body: BodyStyle;
-  skin: SkinTone;
-  hair: Hair;
-  eyes: Eye;
-  expr: Expression;
-  outfitId?: string; // store item id for cosmetic outfit
-};
-
-const SKIN_HEX: Record<SkinTone, string> = {
-  Light: "#f5d7bf",
-  Tan: "#e7b894",
-  Brown: "#b67b52",
-  Deep: "#7a4a2a",
-};
-
-export default function AvatarStudio({
-  open,
-  onClose,
-  initial,
-  onSave,
-}: {
+export type AvatarStudioProps = {
   open: boolean;
   onClose: () => void;
-  initial?: Partial<AvatarPreset>;
+  initial?: AvatarPreset;
   onSave?: (preset: AvatarPreset) => void;
-}) {
-  const inv = useInventory();
-  const [body, setBody] = useState<BodyStyle>(initial?.body ?? "Standard");
-  const [skin, setSkin] = useState<SkinTone>(initial?.skin ?? "Tan");
-  const [hair, setHair] = useState<Hair>(initial?.hair ?? "Short");
-  const [eyes, setEyes] = useState<Eye>(initial?.eyes ?? "Round");
-  const [expr, setExpr] = useState<Expression>(initial?.expr ?? "Smile");
-  const [outfitId, setOutfitId] = useState<string | undefined>(initial?.outfitId);
+};
 
-  const outfit = useMemo(
-    () => (outfitId ? inv.catalog.find((i) => i.id === outfitId) : undefined),
-    [outfitId, inv.catalog]
-  );
-  const ownsOutfit = outfit ? inv.isOwned(outfit.id) : true;
+export default function AvatarStudio({ open, onClose, initial, onSave }: AvatarStudioProps) {
+  const { preset: current, setPreset } = useAvatar();
+  const [draft, setDraft] = useState<AvatarPreset>(initial ?? current);
+
+  // keep draft aligned if the current preset changes from elsewhere
+  useEffect(() => {
+    if (!open) return;
+    setDraft(initial ?? current);
+  }, [open, initial, current]);
 
   if (!open) return null;
 
-  function handleSave() {
-    const preset: AvatarPreset = { body, skin, hair, eyes, expr, outfitId };
-    onSave?.(preset);
+  function choose<K extends keyof AvatarPreset>(key: K, value: AvatarPreset[K]) {
+    setDraft((d) => ({ ...d, [key]: value }));
+  }
+
+  function save() {
+    setPreset(draft);
+    onSave?.(draft);
     onClose();
   }
 
-  function buyOutfit(id: string) {
-    const res = inv.buy(id);
-    if (!res.ok) {
-      alert(res.reason ?? "Could not buy.");
-      return;
-    }
-    setOutfitId(id);
-  }
-
   return (
-    <div className="eva-modal">
-      <div className="eva-sheet">
-        <div className="eva-head">
-          <h3>Create-Your-Hero</h3>
-          <button className="eva-x" onClick={onClose} aria-label="Close">✕</button>
+    <div className="modalRoot" role="dialog" aria-modal="true">
+      <div className="modalCard">
+        <div className="modalHead">
+          <h2>Create-Your-Hero</h2>
+          <button className="x" onClick={onClose} aria-label="Close">×</button>
         </div>
 
-        <div className="eva-body grid">
-          {/* Live Preview */}
+        <div className="modalBody">
+          {/* 2D preview — simple, stylized and original */}
           <div className="preview">
-            <AvatarPreview body={body} skin={skin} hair={hair} eyes={eyes} expr={expr} outfitEmoji={outfit?.emoji} />
-            <div className="muted small" style={{ marginTop: 8 }}>
-              Live preview updates as you click styles.
-            </div>
+            <Preview2D preset={draft} />
           </div>
 
-          {/* Controls */}
+          {/* controls */}
           <div className="controls">
-            <Field label="Body">
-              <Row>
-                <Chip selected={body === "Slim"} onClick={() => setBody("Slim")}>Slim</Chip>
-                <Chip selected={body === "Standard"} onClick={() => setBody("Standard")}>Standard</Chip>
-                <Chip selected={body === "Athletic"} onClick={() => setBody("Athletic")}>Athletic</Chip>
-              </Row>
-            </Field>
+            <Section title="Body">
+              <Row options={["Slim","Standard","Athletic"] as const} value={draft.body} onPick={(v)=>choose("body", v)} />
+            </Section>
 
-            <Field label="Skin tone">
-              <Row>
-                {(["Light","Tan","Brown","Deep"] as SkinTone[]).map((t) => (
-                  <Swatch key={t} color={SKIN_HEX[t]} selected={skin === t} onClick={() => setSkin(t)} title={t} />
+            <Section title="Skin tone">
+              <div className="swatches">
+                {(["Very Light","Light","Tan","Deep","Rich"] as const).map((s)=>(
+                  <button key={s} className={"sw "+(draft.skin===s?"on":"")}
+                    style={{ background: skinHex(s) }} onClick={()=>choose("skin",s)} aria-label={s}/>
                 ))}
-              </Row>
-            </Field>
-
-            <Field label="Hair">
-              <Row>
-                <Chip selected={hair === "Short"} onClick={() => setHair("Short")}>Short</Chip>
-                <Chip selected={hair === "Ponytail"} onClick={() => setHair("Ponytail")}>Ponytail</Chip>
-                <Chip selected={hair === "Curly"} onClick={() => setHair("Curly")}>Curly</Chip>
-                <Chip selected={hair === "Buzz"} onClick={() => setHair("Buzz")}>Buzz</Chip>
-              </Row>
-            </Field>
-
-            <Field label="Eyes">
-              <Row>
-                <Chip selected={eyes === "Round"} onClick={() => setEyes("Round")}>Round</Chip>
-                <Chip selected={eyes === "Sharp"} onClick={() => setEyes("Sharp")}>Sharp</Chip>
-                <Chip selected={eyes === "Happy"} onClick={() => setEyes("Happy")}>Happy</Chip>
-              </Row>
-            </Field>
-
-            <Field label="Expression">
-              <Row>
-                <Chip selected={expr === "Neutral"} onClick={() => setExpr("Neutral")}>Neutral</Chip>
-                <Chip selected={expr === "Smile"} onClick={() => setExpr("Smile")}>Smile</Chip>
-                <Chip selected={expr === "Wow"} onClick={() => setExpr("Wow")}>Wow</Chip>
-                <Chip selected={expr === "Determined"} onClick={() => setExpr("Determined")}>Determined</Chip>
-              </Row>
-            </Field>
-
-            <Field label="Outfit (cosmetic)">
-              <div className="outfits">
-                {inv.catalog
-                  .filter((i) => i.slot === "outfit")
-                  .map((i) => {
-                    const owned = inv.isOwned(i.id);
-                    const active = outfitId === i.id;
-                    return (
-                      <button
-                        key={i.id}
-                        className={`outCard ${active ? "active" : ""}`}
-                        onClick={() => setOutfitId(i.id)}
-                        title={i.name}
-                      >
-                        <div className="big">{i.emoji ?? "🧥"}</div>
-                        <div className="nm">{i.name}</div>
-                        <div className="sub">{owned ? "Owned" : `${i.price}c`}</div>
-                      </button>
-                    );
-                  })}
               </div>
+            </Section>
 
-              {!ownsOutfit && outfit && (
-                <div className="buyrow">
-                  <button className="primary" onClick={() => buyOutfit(outfit.id)}>
-                    Buy {outfit.name} ({outfit.price}c)
-                  </button>
-                </div>
-              )}
-            </Field>
+            <Section title="Hair">
+              <Row options={["Short","Ponytail","Curly","Buzz"] as const} value={draft.hair} onPick={(v)=>choose("hair", v)} />
+            </Section>
 
-            <div className="actrow">
+            <Section title="Eyes">
+              <Row options={["Round","Sharp","Happy"] as const} value={draft.eyes} onPick={(v)=>choose("eyes", v)} />
+            </Section>
+
+            <Section title="Expression">
+              <Row options={["Neutral","Smile","Wow","Determined"] as const} value={draft.expr} onPick={(v)=>choose("expr", v)} />
+            </Section>
+
+            <Section title="Outfit (cosmetic)">
+              <div className="outfits">
+                <OutfitCard
+                  title="Runner Set" price="Owned" active={draft.outfitId==="outfit_runner"}
+                  onClick={()=>choose("outfitId","outfit_runner")} swatch="#1f3e76" />
+                <OutfitCard
+                  title="Astro Set" price="420c" active={draft.outfitId==="outfit_astro"}
+                  onClick={()=>choose("outfitId","outfit_astro")} swatch="#2a9dad" />
+              </div>
+            </Section>
+
+            <div className="actions">
               <button className="ghost" onClick={onClose}>Cancel</button>
-              <button className="primary" onClick={handleSave}>Save</button>
+              <button className="primary" onClick={save}>Save</button>
             </div>
           </div>
         </div>
-
-        <style>{`
-          .eva-modal{ position:fixed; inset:0; display:grid; place-items:center; background:rgba(2,6,23,.6); backdrop-filter: blur(6px); z-index:50; padding:16px; }
-          .eva-sheet{ width:100%; max-width:900px; background:#0f172a; color:#e6edf7; border:1px solid rgba(255,255,255,.08); border-radius:14px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
-          .eva-head{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.06); background:linear-gradient(180deg, rgba(96,165,250,.08), transparent); }
-          .eva-x{ background:transparent; color:#9fb0c7; border:none; font-size:18px; cursor:pointer; }
-          .eva-body.grid{ display:grid; grid-template-columns: 1fr 1.2fr; gap:12px; padding:14px; }
-          .preview{ background:#121a2c; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px; display:grid; place-items:center; min-height:280px; }
-          .controls{ display:flex; flex-direction:column; gap:10px; }
-
-          .field{ display:flex; flex-direction:column; gap:6px; }
-          .label{ font-size:12px; color:#9fb0c7; }
-          .row{ display:flex; flex-wrap:wrap; gap:8px; }
-          .chip{ background:#111a2d; border:1px solid rgba(255,255,255,.12); color:#e6edf7; border-radius:999px; padding:6px 10px; cursor:pointer; }
-          .chip.sel{ border-color:rgba(96,165,250,.45); box-shadow:0 0 0 2px rgba(96,165,250,.15) inset; }
-
-          .sw{ width:28px; height:28px; border-radius:6px; border:2px solid rgba(255,255,255,.15); cursor:pointer; }
-          .sw.sel{ outline:2px solid rgba(96,165,250,.5); }
-
-          .outfits{ display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:8px; }
-          .outCard{ background:#111a2d; border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:8px; cursor:pointer; text-align:left; }
-          .outCard.active{ border-color:rgba(96,165,250,.45); }
-          .outCard .big{ font-size:24px; }
-          .outCard .nm{ font-weight:700; margin-top:2px; }
-          .outCard .sub{ font-size:12px; color:#9fb0c7; }
-
-          .buyrow{ display:flex; justify-content:flex-end; margin-top:6px; }
-          .actrow{ display:grid; grid-template-columns: auto auto; gap:8px; justify-content:end; }
-          .ghost{ background:transparent; border:1px solid rgba(255,255,255,.12); color:#e6edf7; border-radius:10px; padding:8px 12px; cursor:pointer; }
-          @media (max-width: 980px){ .eva-body.grid{ grid-template-columns: 1fr; } }
-        `}</style>
       </div>
+
+      <style>{styles}</style>
     </div>
   );
 }
 
-/* ---------------- Small UI atoms ---------------- */
+/* ---------- tiny components ---------- */
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="field">
-      <div className="label">{label}</div>
+    <div className="section">
+      <div className="label">{title}</div>
       {children}
     </div>
   );
 }
 
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="row">{children}</div>;
+function Row<T extends string>({
+  options, value, onPick,
+}: { options: readonly T[]; value: T; onPick: (v: T) => void }) {
+  return (
+    <div className="row">
+      {options.map((o) => (
+        <button key={o} className={"chip " + (o === value ? "on" : "")} onClick={() => onPick(o)}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function Chip({
-  children,
-  selected,
-  onClick,
-}: {
-  children: React.ReactNode;
-  selected?: boolean;
-  onClick?: () => void;
-}) {
+function OutfitCard({
+  title, price, active, onClick, swatch,
+}: { title: string; price: string; active?: boolean; onClick: ()=>void; swatch: string }) {
   return (
-    <button className={`chip ${selected ? "sel" : ""}`} onClick={onClick}>
-      {children}
+    <button className={"card "+(active?"on":"")} onClick={onClick}>
+      <div className="icon" style={{ background: swatch }} />
+      <div className="ctext">
+        <div className="ctitle">{title}</div>
+        <div className="cprice">{price}</div>
+      </div>
     </button>
   );
 }
 
-function Swatch({
-  color,
-  selected,
-  onClick,
-  title,
-}: {
-  color: string;
-  selected?: boolean;
-  onClick?: () => void;
-  title?: string;
-}) {
+/* ---------- 2D preview (simple and original) ---------- */
+
+function Preview2D({ preset }: { preset: AvatarPreset }) {
+  const skin = skinHex(preset.skin);
+  const hair = "#2a3453";
+  const shirt = preset.outfitId === "outfit_astro" ? "#1e2a44" : "#1f3e76";
+  const eye = "#0b0f16";
+
   return (
-    <button
-      className={`sw ${selected ? "sel" : ""}`}
-      onClick={onClick}
-      title={title}
-      style={{ background: color }}
-    />
+    <svg width="100%" height="100%" viewBox="0 0 240 260">
+      {/* torso & shirt */}
+      <rect x="90" y="120" width="60" height="70" rx="12" fill={shirt} stroke="rgba(255,255,255,.15)"/>
+      {/* legs */}
+      <rect x="102" y="192" width="16" height="32" rx="4" fill="#1e2a44"/>
+      <rect x="122" y="192" width="16" height="32" rx="4" fill="#1e2a44"/>
+      {/* neck */}
+      <rect x="118" y="112" width="12" height="12" rx="4" fill={skin}/>
+      {/* head */}
+      <circle cx="124" cy="96" r="22" fill={skin}/>
+      {/* hair styles */}
+      {preset.hair === "Short" && <rect x="98" y="72" width="52" height="18" rx="9" fill={hair}/>}
+      {preset.hair === "Ponytail" && (
+        <>
+          <rect x="98" y="72" width="52" height="18" rx="9" fill={hair}/>
+          <rect x="146" y="88" width="10" height="22" rx="5" fill={hair}/>
+        </>
+      )}
+      {preset.hair === "Curly" && (
+        <>
+          <circle cx="110" cy="80" r="10" fill={hair}/><circle cx="124" cy="78" r="10" fill={hair}/><circle cx="138" cy="80" r="10" fill={hair}/>
+        </>
+      )}
+      {preset.hair === "Buzz" && (
+        <path d="M106 76 h36 a4 4 0 0 1 4 4 v6 h-44 v-6 a4 4 0 0 1 4-4 z" fill={hair}/>
+      )}
+      {/* eyes */}
+      <circle cx="116" cy="98" r="3.2" fill={eye}/><circle cx="132" cy="98" r="3.2" fill={eye}/>
+      {/* mouth */}
+      {preset.expr === "Smile" && <path d="M116 108 q8 8 16 0" stroke={eye} strokeWidth="3" fill="none"/>}
+      {preset.expr === "Neutral" && <rect x="118" y="106" width="12" height="2.5" rx="1" fill={eye}/>}
+      {preset.expr === "Wow" && <circle cx="124" cy="108" r="5" fill={eye}/>}
+      {preset.expr === "Determined" && <rect x="118" y="106" width="12" height="2.5" rx="1" transform="rotate(10 124 107)" fill={eye}/>}
+    </svg>
   );
 }
 
-/* ---------------- Preview (2D vector) ---------------- */
+/* ---------- styles ---------- */
 
-function AvatarPreview({
-  body,
-  skin,
-  hair,
-  eyes,
-  expr,
-  outfitEmoji,
-}: {
-  body: BodyStyle;
-  skin: SkinTone;
-  hair: Hair;
-  eyes: Eye;
-  expr: Expression;
-  outfitEmoji?: string;
-}) {
-  // Just a simple SVG render so changes are instant and cross-platform.
-  const skinFill = SKIN_HEX[skin];
+const styles = `
+.modalRoot{ position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.4); z-index:50; }
+.modalCard{ width:min(1040px, 96vw); background:#0e1628; border:1px solid rgba(255,255,255,.08); border-radius:16px; box-shadow:0 20px 80px rgba(0,0,0,.35); }
+.modalHead{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid rgba(255,255,255,.06); }
+.modalBody{ display:grid; grid-template-columns: 420px 1fr; gap:18px; padding:16px; }
+.preview{ background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px; height:420px; }
+.controls{ display:flex; flex-direction:column; gap:14px; }
+.section{ display:flex; flex-direction:column; gap:8px; }
+.label{ font-weight:700; opacity:.9; }
+.row{ display:flex; flex-wrap:wrap; gap:8px; }
+.chip{ background:transparent; border:1px solid rgba(255,255,255,.12); color:#e6edf7; border-radius:999px; padding:8px 12px; cursor:pointer; }
+.chip.on{ border-color:rgba(96,165,250,.6); box-shadow:0 0 0 2px rgba(96,165,250,.2) inset; }
+.swatches{ display:flex; gap:8px; }
+.sw{ width:34px; height:26px; border-radius:8px; border:1px solid rgba(255,255,255,.2); cursor:pointer; }
+.sw.on{ outline:2px solid rgba(96,165,250,.6); }
+.outfits{ display:flex; gap:10px; }
+.card{ display:flex; gap:10px; background:transparent; border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:10px; cursor:pointer; }
+.card.on{ border-color:rgba(96,165,250,.6); box-shadow:0 0 0 2px rgba(96,165,250,.15) inset; }
+.icon{ width:44px; height:44px; border-radius:10px; border:1px solid rgba(255,255,255,.18); }
+.ctext{ display:flex; flex-direction:column; }
+.ctitle{ font-weight:700; }
+.cprice{ color:#9fb0c7; font-size:12px; }
+.actions{ display:flex; justify-content:flex-end; gap:10px; }
+.primary{ background:linear-gradient(90deg, #60a5fa, #22d3ee); color:#09121e; font-weight:700; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; box-shadow:0 6px 18px rgba(34,211,238,.25); }
+.ghost{ background:transparent; border:1px solid rgba(255,255,255,.12); color:#e6edf7; border-radius:10px; padding:10px 14px; cursor:pointer; }
+.x{ background:transparent; border:0; color:#9fb0c7; font-size:24px; cursor:pointer; }
+`;
 
-  const hairShape = useMemo(() => {
-    switch (hair) {
-      case "Short":
-        return "M30,22 Q50,6 70,22 L70,40 L30,40 Z";
-      case "Ponytail":
-        return "M30,22 Q50,6 70,22 L70,40 L30,40 Z M72,36 q12,8 10,20";
-      case "Curly":
-        return "M30,22 q6,-10 12,0 q6,-12 12,0 q6,-14 12,0 q6,-10 12,0 L78,40 L30,40 Z";
-      case "Buzz":
-        return "M32,24 Q50,14 68,24 L68,30 L32,30 Z";
-    }
-  }, [hair]);
-
-  const eyeStr = useMemo(() => {
-    switch (eyes) {
-      case "Round":
-        return { left: "•", right: "•" };
-      case "Sharp":
-        return { left: "◦", right: "◦" };
-      case "Happy":
-        return { left: "˘", right: "˘" };
-    }
-  }, [eyes]);
-
-  const mouth = useMemo(() => {
-    switch (expr) {
-      case "Neutral":
-        return "M45,64 h10";
-      case "Smile":
-        return "M42,64 q8,8 16,0";
-      case "Wow":
-        return "M50,62 a4,4 0 1,0 0.01,0";
-      case "Determined":
-        return "M42,64 q8,-4 16,0";
-    }
-  }, [expr]);
-
-  const outfitBadge = outfitEmoji ?? "👕";
-
-  // Body width varies a bit by style
-  const bodyW = body === "Slim" ? 28 : body === "Athletic" ? 38 : 34;
-
-  return (
-    <svg viewBox="0 0 100 120" width="100%" height="260">
-      {/* torso */}
-      <rect x={50 - bodyW / 2} y={70} width={bodyW} height="36" rx="6" fill="#1a2744" stroke="rgba(255,255,255,.1)" />
-      {/* outfit badge */}
-      <text x="50" y="88" textAnchor="middle" fontSize="16">{outfitBadge}</text>
-      {/* neck */}
-      <rect x="46" y="54" width="8" height="12" rx="3" fill={skinFill} />
-      {/* head */}
-      <circle cx="50" cy="40" r="16" fill={skinFill} stroke="rgba(255,255,255,.1)" />
-      {/* hair */}
-      <path d={hairShape} fill="#22293f" />
-      {/* eyes */}
-      <text x="44" y="44" textAnchor="middle" fontSize="10">{eyeStr.left}</text>
-      <text x="56" y="44" textAnchor="middle" fontSize="10">{eyeStr.right}</text>
-      {/* mouth */}
-      <path d={mouth} stroke="#e6edf7" strokeWidth="2" fill="none" strokeLinecap="round" />
-      {/* legs */}
-      <rect x="46" y="106" width="6" height="10" rx="2" fill="#1a2744" />
-      <rect x="52" y="106" width="6" height="10" rx="2" fill="#1a2744" />
-    </svg>
-  );
+function skinHex(s: AvatarPreset["skin"]) {
+  switch (s) {
+    case "Very Light": return "#f6d7c3";
+    case "Light": return "#e9bda1";
+    case "Tan": return "#c88c60";
+    case "Deep": return "#7d4a22";
+    case "Rich": return "#5a3a20";
+  }
 }
