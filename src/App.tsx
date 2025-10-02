@@ -1,7 +1,7 @@
 // src/App.tsx
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Sky, ContactShadows } from "@react-three/drei";
+import { Sky, ContactShadows } from "@react-three/drei";
 import { useEffect, useRef, useState } from "react";
 
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
@@ -20,8 +20,22 @@ import { useAvatar } from "./state/avatar";
 // schedule (bell loop + store)
 import { useSchedule, startBellLoop, stopBellLoop } from "./state/schedule";
 
-// classroom portals
+// classroom portals (kept in the side panel for now)
 import ClassroomPortal from "./features/classroom/ClassroomPortal";
+
+// NEW: outdoor world + player controller + colliders
+import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D";
+import PlayerController from "./features/player/PlayerController";
+// Optional school interior (if you added Campus3D.tsx). If not yet, the fallback keeps build working.
+let Campus3D: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Campus3D = require("./features/campus/Campus3D").default;
+} catch {
+  Campus3D = function CampusPlaceholder() {
+    return null;
+  };
+}
 
 /* ---------------- Tabs ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -36,7 +50,7 @@ const hashToTab = (h: string): Tab => {
   return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
 };
 
-/* small accent cube */
+/* small accent cube (kept for avatar preview etc.) */
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
   return (
@@ -154,12 +168,72 @@ export default function App() {
 
   const [schoolMode, setSchoolMode] = useState(false);
 
+  // --- NEW: scene switching for Play tab ---
+  // "outdoor" neighborhood vs "campus" school interior
+  const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
+  const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
+
+  // handlers from scenes
+  function enterSchool() {
+    setScene("campus");
+  }
+  function enterPlot(plotId: string) {
+    // Send to Build tab to start house building
+    go("build");
+  }
+
   // optional: handle AI lesson start/stop hooks from portals
   function handleStartLesson(classId: string) {
-    // connect your realtime AI here
+    // connect your realtime AI here (speech/text based on classId)
   }
   function handleEndLesson(classId: string) {
     // cleanup if needed
+  }
+
+  // Render helpers for the 3D scene inside the Canvas (Play)
+  function PlayScene() {
+    if (scene === "outdoor") {
+      return (
+        <>
+          <OutdoorWorld3D
+            onEnterSchool={enterSchool}
+            onEnterPlot={enterPlot}
+            myPlotId="P1"
+            onReadyColliders={setOutdoorColliders}
+          />
+          <PlayerController
+            start={{ x: 0, z: 8 }}
+            colliders={outdoorColliders}
+            speed={6}
+            radius={0.45}
+          />
+        </>
+      );
+    }
+    // campus / interior (static for now; next steps can add indoor movement & seating)
+    return <Campus3D onEnter={(cid: string) => console.log("enter class", cid)} />;
+  }
+
+  // For non-Play tabs we keep your original hero preview (orbit)
+  function NonPlayBackdrop() {
+    return (
+      <>
+        {/* ground/backdrop */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[40, 40]} />
+          <meshStandardMaterial color={"#cfd7df"} roughness={0.95} metalness={0} />
+        </mesh>
+        <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
+        {/* hero preview */}
+        <group position={[0, 0, 0]}>
+          <HeroRig3D preset={preset} />
+        </group>
+        {/* accent */}
+        <group position={[2.0, 1.0, -1.0]} scale={0.6}>
+          <SpinningBlock />
+        </group>
+      </>
+    );
   }
 
   return (
@@ -206,24 +280,7 @@ export default function App() {
           />
           <Sky sunPosition={[100, 20, 100]} />
 
-          {/* ground */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[40, 40]} />
-            <meshStandardMaterial color={"#cfd7df"} roughness={0.95} metalness={0} />
-          </mesh>
-          <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
-
-          {/* hero */}
-          <group position={[0, 0, 0]}>
-            <HeroRig3D preset={preset} />
-          </group>
-
-          {/* accent cube */}
-          <group position={[2.0, 1.0, -1.0]} scale={0.6}>
-            <SpinningBlock />
-          </group>
-
-          <OrbitControls enablePan={false} />
+          {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
         </Canvas>
 
         <aside className="panel">
@@ -247,7 +304,7 @@ export default function App() {
 
               <QuestsPanel />
 
-              {/* School campus — enter rooms to auto-start lessons if it's the right period */}
+              {/* School campus shortcuts (keep for now) */}
               <div style={{ marginTop: 6 }}>
                 <h3 style={{ margin: "6px 0 8px" }}>School Campus</h3>
                 <div
