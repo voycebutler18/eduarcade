@@ -3,6 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
 import { useRef, useState } from "react";
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
+import ProfileBar from "./features/profile/ProfileBar";
+import { useAge } from "./state/profile";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -27,9 +29,16 @@ export default function App() {
   const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
   const cleared = lastQuiz?.passed ?? false;
 
+  // Age (from profile bar)
+  const age = useAge();
+
   // Mock queue state for MVP feel
   const [queueing, setQueueing] = useState(false);
   function mockQueue() {
+    if (age == null) {
+      alert("Set your birthday in the Profile bar to enable age-band matchmaking.");
+      return;
+    }
     if (!cleared) {
       setQuizOpen(true);
       return;
@@ -38,7 +47,7 @@ export default function App() {
     // fake 1.2s queue then land “in match”
     setTimeout(() => {
       setQueueing(false);
-      alert("✅ Joined mock lobby! (We’ll wire realtime next.)");
+      alert(`✅ Joined mock lobby for age band ${age - 1}–${age + 1}. (Realtime next.)`);
     }, 1200);
   }
 
@@ -75,6 +84,11 @@ export default function App() {
         </nav>
       </header>
 
+      {/* Profile bar (username, birthday/age, gender, coins) */}
+      <div style={{ padding: "10px 14px" }}>
+        <ProfileBar />
+      </div>
+
       {/* 3D stage */}
       <section className="stage">
         <Canvas camera={{ position: [3, 3, 3], fov: 55 }}>
@@ -95,13 +109,14 @@ export default function App() {
                 <li>🧩 Team Trials (Co-op puzzles)</li>
               </ul>
 
-              <button className="primary" onClick={() => (cleared ? mockQueue() : setQuizOpen(true))}>
+              <button className="primary" onClick={mockQueue}>
                 {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
               </button>
 
               <p className="muted small" style={{ marginTop: 8 }}>
                 {cleared
-                  ? `Cleared in ${lastQuiz?.subject} • ${lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
+                  ? `Cleared in ${lastQuiz?.subject} • ${
+                      lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
                     } (${lastQuiz?.correctCount}/5)`
                   : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
               </p>
@@ -111,7 +126,9 @@ export default function App() {
           {tab === "build" && (
             <div>
               <h2>Build Worlds</h2>
-              <p>Create obstacle courses, puzzles, and cooperative classrooms with safe templates.</p>
+              <p>
+                Create obstacle courses, puzzles, and cooperative classrooms with safe templates.
+              </p>
               <button className="primary">New Map</button>
             </div>
           )}
@@ -127,8 +144,12 @@ export default function App() {
           {tab === "store" && (
             <div>
               <h2>Store</h2>
-              <p>Cosmetics only. Everyone starts with <strong>1,000 Coins</strong>.</p>
-              <button className="primary">Browse Items</button>
+              <p>
+                Cosmetics only. Everyone starts with <strong>1,000 Coins</strong>.
+              </p>
+              <button className="primary" onClick={() => alert("Store UI coming next.")}>
+                Browse Items
+              </button>
             </div>
           )}
         </aside>
@@ -149,9 +170,6 @@ export default function App() {
           }
           setLastQuiz(res);
           setQuizOpen(false);
-          if (res.passed) {
-            // optional toast could go here
-          }
         }}
       />
     </div>
