@@ -26,6 +26,8 @@ import ClassroomPortal from "./features/classroom/ClassroomPortal";
 // NEW: outdoor world + player controller + colliders
 import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D";
 import PlayerController from "./features/player/PlayerController";
+import FollowCam from "./features/player/FollowCam"; // <<—— camera that tracks the player
+
 // Optional school interior (if you added Campus3D.tsx). If not yet, the fallback keeps build working.
 let Campus3D: any;
 try {
@@ -169,26 +171,21 @@ export default function App() {
   const [schoolMode, setSchoolMode] = useState(false);
 
   // --- NEW: scene switching for Play tab ---
-  // "outdoor" neighborhood vs "campus" school interior
   const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
   const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
+  const [playerPos, setPlayerPos] = useState({ x: 0, z: 8 }); // tracked for the FollowCam
 
   // handlers from scenes
   function enterSchool() {
     setScene("campus");
   }
-  function enterPlot(plotId: string) {
-    // Send to Build tab to start house building
+  function enterPlot(_plotId: string) {
     go("build");
   }
 
   // optional: handle AI lesson start/stop hooks from portals
-  function handleStartLesson(classId: string) {
-    // connect your realtime AI here (speech/text based on classId)
-  }
-  function handleEndLesson(classId: string) {
-    // cleanup if needed
-  }
+  function handleStartLesson(_classId: string) {}
+  function handleEndLesson(_classId: string) {}
 
   // Render helpers for the 3D scene inside the Canvas (Play)
   function PlayScene() {
@@ -206,29 +203,28 @@ export default function App() {
             colliders={outdoorColliders}
             speed={6}
             radius={0.45}
+            onMove={(p) => setPlayerPos(p)}   // <<—— capture movement
           />
+          <FollowCam target={playerPos} height={5.5} back={10} /> {/* <<—— camera follows player */}
         </>
       );
     }
-    // campus / interior (static for now; next steps can add indoor movement & seating)
+    // campus / interior (static placeholder until Campus3D is added)
     return <Campus3D onEnter={(cid: string) => console.log("enter class", cid)} />;
   }
 
-  // For non-Play tabs we keep your original hero preview (orbit)
+  // For non-Play tabs we keep your original hero preview
   function NonPlayBackdrop() {
     return (
       <>
-        {/* ground/backdrop */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[40, 40]} />
           <meshStandardMaterial color={"#cfd7df"} roughness={0.95} metalness={0} />
         </mesh>
         <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
-        {/* hero preview */}
         <group position={[0, 0, 0]}>
           <HeroRig3D preset={preset} />
         </group>
-        {/* accent */}
         <group position={[2.0, 1.0, -1.0]} scale={0.6}>
           <SpinningBlock />
         </group>
@@ -238,7 +234,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* HUD */}
       <ScheduleHUD />
 
       <header className="topbar">
@@ -266,7 +261,7 @@ export default function App() {
       <section className="stage">
         <Canvas
           shadows
-          camera={{ position: [3.5, 3.0, 3.5], fov: 55 }}
+          camera={{ position: [0, 6, 10], fov: 55 }} // FollowCam will take over on Play
           gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
         >
           {/* lighting */}
@@ -279,6 +274,7 @@ export default function App() {
             shadow-mapSize-height={2048}
           />
           <Sky sunPosition={[100, 20, 100]} />
+          <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
 
           {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
         </Canvas>
@@ -296,9 +292,7 @@ export default function App() {
                   {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
                 </button>
                 <p className="muted small" style={{ marginTop: 8 }}>
-                  {cleared
-                    ? `Cleared • ${lastQuiz?.subject} (${lastQuiz?.correctCount}/5)`
-                    : "Pass 5/5 to queue."}
+                  {cleared ? `Cleared • ${lastQuiz?.subject} (${lastQuiz?.correctCount}/5)` : "Pass 5/5 to queue."}
                 </p>
               </div>
 
