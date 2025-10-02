@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GroupProps, useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-import { AvatarPreset } from "./AvatarStudio";
+import { AvatarPreset } from "../../state/avatar";  // ← changed path
 
 /**
  * HeroRig3D
