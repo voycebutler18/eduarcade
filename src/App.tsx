@@ -5,10 +5,11 @@ import { useRef, useState } from "react";
 
 import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
-import { useAge } from "./state/profile";
+import { useAge, useUsername } from "./state/profile";
 import StorePanel from "./features/store/StorePanel";
 import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
 import BuildWorlds from "./features/build/BuildWorlds";
+import ChatPanel from "./features/chat/ChatPanel";
 
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
@@ -33,8 +34,9 @@ export default function App() {
   const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
   const cleared = lastQuiz?.passed ?? false;
 
-  // Age (from profile bar)
+  // Profile data
   const age = useAge();
+  const username = useUsername();
 
   // Mock queue state for MVP feel
   const [queueing, setQueueing] = useState(false);
@@ -48,7 +50,6 @@ export default function App() {
       return;
     }
     setQueueing(true);
-    // fake 1.2s queue then land “in match”
     setTimeout(() => {
       setQueueing(false);
       alert(`✅ Joined mock lobby for age band ${age - 1}–${age + 1}. (Realtime next.)`);
@@ -58,6 +59,9 @@ export default function App() {
   // Avatar Studio modal
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(null);
+
+  // School Mode (tight chat / disable voice). Local toggle for MVP.
+  const [schoolMode, setSchoolMode] = useState(false);
 
   return (
     <div className="app">
@@ -110,24 +114,39 @@ export default function App() {
         {/* Right-side panel */}
         <aside className="panel">
           {tab === "play" && (
-            <div>
-              <h2>Party Playlists</h2>
-              <ul className="list">
-                <li>🏁 Party Runs (Obby sprints)</li>
-                <li>🧩 Team Trials (Co-op puzzles)</li>
-              </ul>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <h2>Party Playlists</h2>
+                <ul className="list">
+                  <li>🏁 Party Runs (Obby sprints)</li>
+                  <li>🧩 Team Trials (Co-op puzzles)</li>
+                </ul>
 
-              <button className="primary" onClick={mockQueue}>
-                {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
-              </button>
+                <button className="primary" onClick={mockQueue}>
+                  {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
+                </button>
 
-              <p className="muted small" style={{ marginTop: 8 }}>
-                {cleared
-                  ? `Cleared in ${lastQuiz?.subject} • ${
-                      lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
-                    } (${lastQuiz?.correctCount}/5)`
-                  : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
-              </p>
+                <p className="muted small" style={{ marginTop: 8 }}>
+                  {cleared
+                    ? `Cleared in ${lastQuiz?.subject} • ${
+                        lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
+                      } (${lastQuiz?.correctCount}/5)`
+                    : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
+                </p>
+              </div>
+
+              {/* School Mode toggle (tighten chat & disable PTT) */}
+              <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={schoolMode}
+                  onChange={(e) => setSchoolMode(e.target.checked)}
+                />
+                Enable School Mode (tight chat, no voice)
+              </label>
+
+              {/* Room Chat */}
+              <ChatPanel username={username || "Player"} schoolMode={schoolMode} />
             </div>
           )}
 
