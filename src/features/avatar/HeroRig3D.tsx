@@ -2,15 +2,7 @@
 import * as THREE from "three";
 import { GroupProps, useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-
-type AvatarPreset = {
-  skin?: "Very Light" | "Light" | "Tan" | "Deep" | "Rich";
-  hair?: "Short" | "Ponytail" | "Curly" | "Buzz";
-  eyes?: "Round" | "Sharp" | "Happy";
-  expr?: "Neutral" | "Smile" | "Wow" | "Determined";
-  body?: "Slim" | "Standard" | "Athletic";
-  outfitId?: "outfit_runner" | "outfit_astro";
-};
+import { AvatarPreset } from "../../state/avatar";
 
 /**
  * HeroRig3D (procedural, original)
@@ -58,13 +50,21 @@ export default function HeroRig3D({
       <group ref={gTorso} position={[0, 0.9, 0]}>
         {/* base torso */}
         <mesh castShadow receiveShadow>
-          <cylinderGeometry args={[0.46, 0.46, 1.1, 16]} />
+          {(THREE as any).CapsuleGeometry ? (
+            <capsuleGeometry args={[0.46, 0.64, 8, 16]} />
+          ) : (
+            <boxGeometry args={[0.92, 1.1, 0.5]} />
+          )}
           <meshStandardMaterial color={"#1b2b4b"} roughness={0.7} metalness={0.05} />
         </mesh>
 
         {/* shirt overlay */}
         <mesh position={[0, 0.01, 0]} scale={[1.015, 1.02, 1.02]} castShadow receiveShadow>
-          <cylinderGeometry args={[0.47, 0.47, 1.12, 16]} />
+          {(THREE as any).CapsuleGeometry ? (
+            <capsuleGeometry args={[0.47, 0.66, 8, 16]} />
+          ) : (
+            <boxGeometry args={[0.94, 1.12, 0.52]} />
+          )}
           <meshStandardMaterial color={shirt} roughness={0.5} metalness={0.08} />
         </mesh>
 
@@ -81,7 +81,7 @@ export default function HeroRig3D({
             <meshStandardMaterial color={skin} roughness={0.85} />
           </mesh>
 
-          {/* HAIR – improved, clearly distinguishable */}
+          {/* HAIR — improved, clearly distinguishable */}
           {hairStyle(preset?.hair, hairColor)}
 
           {/* eyes */}
@@ -140,17 +140,29 @@ function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: 
     <group rotation={[0, 0, side * 0.15]}>
       {/* upper arm */}
       <mesh position={[side * 0.08, -0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.11, 0.11, 0.5, 12]} />
+        {(THREE as any).CapsuleGeometry ? (
+          <capsuleGeometry args={[0.11, 0.28, 8, 12]} />
+        ) : (
+          <cylinderGeometry args={[0.11, 0.11, 0.5, 12]} />
+        )}
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
       {/* sleeve */}
       <mesh position={[side * 0.08, -0.05, 0]} scale={[1.06, 0.6, 1.06]} castShadow>
-        <cylinderGeometry args={[0.12, 0.12, 0.3, 12]} />
+        {(THREE as any).CapsuleGeometry ? (
+          <capsuleGeometry args={[0.12, 0.18, 8, 12]} />
+        ) : (
+          <cylinderGeometry args={[0.12, 0.12, 0.3, 12]} />
+        )}
         <meshStandardMaterial color={sleeve} roughness={0.55} />
       </mesh>
       {/* forearm */}
       <mesh position={[side * 0.12, -0.52, 0]} rotation={[0, 0, side * 0.08]} castShadow>
-        <cylinderGeometry args={[0.105, 0.105, 0.52, 12]} />
+        {(THREE as any).CapsuleGeometry ? (
+          <capsuleGeometry args={[0.105, 0.32, 8, 12]} />
+        ) : (
+          <cylinderGeometry args={[0.105, 0.105, 0.52, 12]} />
+        )}
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
       {/* hand */}
@@ -167,12 +179,20 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
     <group>
       {/* thigh */}
       <mesh position={[0, -0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.13, 0.13, 0.5, 12]} />
+        {(THREE as any).CapsuleGeometry ? (
+          <capsuleGeometry args={[0.13, 0.32, 8, 12]} />
+        ) : (
+          <cylinderGeometry args={[0.13, 0.13, 0.5, 12]} />
+        )}
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
       {/* calf */}
       <mesh position={[0.02, -0.54, 0]} castShadow>
-        <cylinderGeometry args={[0.12, 0.12, 0.54, 12]} />
+        {(THREE as any).CapsuleGeometry ? (
+          <capsuleGeometry args={[0.12, 0.34, 8, 12]} />
+        ) : (
+          <cylinderGeometry args={[0.12, 0.12, 0.54, 12]} />
+        )}
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
       {/* foot */}
@@ -199,16 +219,18 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
   const yTop = 0.12; // crown shift
 
   switch (style) {
-    /** SHORT: CLOSE-CUT CAP that reads as "short hair" */
+    /** * CLOSE-CUT CAP that reads as "short hair" 
+     * This style combines two shapes to create a stylized flat-top or sailor-hat look.
+     */
     case "Short":
       return (
         <group>
-          {/* cap ring (sides) */}
+          {/* This cylinder creates a wide, flat ring around the head, like the brim of a cap. */}
           <mesh position={[0, yTop + 0.02, 0]} castShadow>
             <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* top disk */}
+          {/* This is a shallow slice of a sphere, creating the flat top part. */}
           <mesh position={[0, yTop + 0.12, 0]} castShadow>
             <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
             <meshStandardMaterial color={color} roughness={0.8} />
@@ -216,33 +238,41 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
         </group>
       );
 
-    /** PONYTAIL: a headband + tube of hair behind */
+    /** * PONYTAIL: a headband + tube of hair behind 
+     * This is built from three distinct pieces.
+     */
     case "Ponytail":
       return (
         <group>
-          {/* headband */}
+          {/* A Torus (donut shape) is used to create the headband. */}
           <mesh position={[0, yTop + 0.04, 0]} castShadow>
             <torusGeometry args={[R + 0.02, 0.03, 16, 48]} />
             <meshStandardMaterial color={color} roughness={0.75} />
           </mesh>
-          {/* crown hair */}
+          {/* A sphere slice covers the scalp to represent hair on the head. */}
           <mesh position={[0, yTop + 0.05, 0]} castShadow>
             <sphereGeometry args={[R + 0.02, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.2]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* ponytail tube */}
+          {/* A capsule (cylinder with round ends) acts as the stylized ponytail at the back. */}
           <mesh position={[0, yTop - 0.03, -0.22]} rotation={[0.35, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
+            {(THREE as any).CapsuleGeometry ? (
+              <capsuleGeometry args={[0.09, 0.45, 8, 12]} />
+            ) : (
+              <cylinderGeometry args={[0.09, 0.09, 0.6, 16]} />
+            )}
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
         </group>
       );
 
-    /** CURLY: clusters of balls around the crown */
+    /** * CURLY: clusters of balls around the crown 
+     * This style literally uses a pattern of spheres to suggest the volume and texture of curls.
+     */
     case "Curly":
       return (
         <group position={[0, yTop + 0.02, 0]}>
-          {[
+          {[ // An array of 9 positions for each "curl" sphere.
             [-0.20, 0.06, 0.00], [0, 0.08, 0.00], [0.20, 0.06, 0.00],
             [-0.16, 0.03, 0.14], [0.0, 0.04, 0.16], [0.16, 0.03, 0.14],
             [-0.16, 0.03, -0.14], [0.0, 0.02, -0.16], [0.16, 0.03, -0.14],
@@ -255,11 +285,13 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
         </group>
       );
 
-    /** BUZZ: very thin cap hugging the scalp */
+    /** * BUZZ: very thin cap hugging the scalp 
+     * This is represented by a single, very shallow slice of a sphere that sits close to the head.
+     */
     case "Buzz":
       return (
         <mesh position={[0, yTop + 0.01, 0]} castShadow>
-          {/* thin hemisphere slice (thetaLength small) */}
+          {/* The radius is only 0.005 larger than the head, creating the scalp-hugging look. */}
           <sphereGeometry args={[R + 0.005, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4.5]} />
           <meshStandardMaterial color={color} roughness={0.9} />
         </mesh>
