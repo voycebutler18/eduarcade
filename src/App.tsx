@@ -17,21 +17,17 @@ import ProgressCard from "./features/progress/ProgressCard";
 import HeroRig3D from "./features/avatar/HeroRig3D";
 import { useAvatar } from "./state/avatar";
 
-// schedule (bell loop + store)
 import { useSchedule, startBellLoop, stopBellLoop } from "./state/schedule";
-
-// classroom portals (kept in the side panel for now)
 import ClassroomPortal from "./features/classroom/ClassroomPortal";
 
-// NEW: outdoor world + player controller + colliders
+// World + player
 import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D";
 import PlayerController from "./features/player/PlayerController";
-import FollowCam from "./features/player/FollowCam"; // <<—— camera that tracks the player
+import FollowCam from "./features/player/FollowCam";
 
-// Optional school interior (if you added Campus3D.tsx). If not yet, the fallback keeps build working.
+// Optional campus interior (safe fallback)
 let Campus3D: any;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   Campus3D = require("./features/campus/Campus3D").default;
 } catch {
   Campus3D = function CampusPlaceholder() {
@@ -51,17 +47,6 @@ const hashToTab = (h: string): Tab => {
   const v = h.replace(/^#\//, "") as Tab;
   return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
 };
-
-/* small accent cube (kept for avatar preview etc.) */
-function SpinningBlock() {
-  const ref = useRef<THREE.Mesh>(null!);
-  return (
-    <mesh ref={ref} rotation={[0.4, 0.6, 0]} castShadow>
-      <boxGeometry args={[1.3, 1.3, 1.3]} />
-      <meshStandardMaterial metalness={0.2} roughness={0.4} color={"#d8dadd"} />
-    </mesh>
-  );
-}
 
 /* tiny on-screen schedule HUD */
 function ScheduleHUD() {
@@ -104,7 +89,6 @@ function BuildGuard({ children }: { children: React.ReactNode }) {
   const { canBuild } = useSchedule();
   const unlocked = canBuild();
   if (unlocked) return <>{children}</>;
-
   return (
     <div
       style={{
@@ -167,27 +151,24 @@ export default function App() {
 
   const [studioOpen, setStudioOpen] = useState(false);
   const { preset } = useAvatar();
-
   const [schoolMode, setSchoolMode] = useState(false);
 
-  // --- NEW: scene switching for Play tab ---
+  // scene switching (Play)
   const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
   const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
-  const [playerPos, setPlayerPos] = useState({ x: 0, z: 8 }); // tracked for the FollowCam
+  const [playerPos, setPlayerPos] = useState<{ x: number; z: number }>({ x: 0, z: 8 });
 
-  // handlers from scenes
   function enterSchool() {
     setScene("campus");
   }
-  function enterPlot(_plotId: string) {
+  function enterPlot(plotId: string) {
     go("build");
   }
 
-  // optional: handle AI lesson start/stop hooks from portals
   function handleStartLesson(_classId: string) {}
   function handleEndLesson(_classId: string) {}
 
-  // Render helpers for the 3D scene inside the Canvas (Play)
+  // Play scene (Outdoor vs Campus)
   function PlayScene() {
     if (scene === "outdoor") {
       return (
@@ -198,22 +179,30 @@ export default function App() {
             myPlotId="P1"
             onReadyColliders={setOutdoorColliders}
           />
+
+          {/* Player + real avatar + follow-cam */}
           <PlayerController
             start={{ x: 0, z: 8 }}
             colliders={outdoorColliders}
             speed={6}
             radius={0.45}
-            onMove={(p) => setPlayerPos(p)}   // <<—— capture movement
-          />
-          <FollowCam target={playerPos} height={5.5} back={10} /> {/* <<—— camera follows player */}
+            onMove={(p) => setPlayerPos(p)}
+          >
+            {/* Your actual customized avatar */}
+            <group position={[0, 0, 0]} scale={0.95}>
+              <HeroRig3D preset={preset} />
+            </group>
+          </PlayerController>
+
+          <FollowCam target={[playerPos.x, 0, playerPos.z]} />
         </>
       );
     }
-    // campus / interior (static placeholder until Campus3D is added)
+    // campus interior (placeholder unless you hooked it up)
     return <Campus3D onEnter={(cid: string) => console.log("enter class", cid)} />;
   }
 
-  // For non-Play tabs we keep your original hero preview
+  // Backdrop for non-Play tabs (keeps your avatar preview)
   function NonPlayBackdrop() {
     return (
       <>
@@ -224,9 +213,6 @@ export default function App() {
         <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
         <group position={[0, 0, 0]}>
           <HeroRig3D preset={preset} />
-        </group>
-        <group position={[2.0, 1.0, -1.0]} scale={0.6}>
-          <SpinningBlock />
         </group>
       </>
     );
@@ -261,7 +247,7 @@ export default function App() {
       <section className="stage">
         <Canvas
           shadows
-          camera={{ position: [0, 6, 10], fov: 55 }} // FollowCam will take over on Play
+          camera={{ position: [3.5, 3.0, 3.5], fov: 55 }}
           gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
         >
           {/* lighting */}
@@ -274,7 +260,6 @@ export default function App() {
             shadow-mapSize-height={2048}
           />
           <Sky sunPosition={[100, 20, 100]} />
-          <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
 
           {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
         </Canvas>
@@ -298,7 +283,7 @@ export default function App() {
 
               <QuestsPanel />
 
-              {/* School campus shortcuts (keep for now) */}
+              {/* School campus shortcuts (UI) */}
               <div style={{ marginTop: 6 }}>
                 <h3 style={{ margin: "6px 0 8px" }}>School Campus</h3>
                 <div
