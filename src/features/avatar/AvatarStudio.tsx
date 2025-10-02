@@ -2,15 +2,16 @@
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, ContactShadows } from "@react-three/drei";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import HeroRig3D from "./HeroRig3D";
 import { useAvatar, AvatarPreset } from "../../state/avatar";
 
 /**
  * 3D Avatar Studio
- * - Left: live 3D preview using the same HeroRig3D as the world
+ * - Left: live 3D preview using the same HeroRig3D
  * - Right: controls for body/skin/hair/eyes/expression/outfit
  * - Save writes to zustand store -> App scene updates instantly
+ * - Fixes: front-facing default view, better framing, quick view buttons
  */
 
 export type AvatarStudioProps = {
@@ -51,40 +52,7 @@ export default function AvatarStudio({ open, onClose, initial, onSave }: AvatarS
 
         <div className="eva-modalBody">
           {/* 3D preview */}
-          <div className="eva-preview3d">
-            <Canvas
-              shadows
-              dpr={[1, 2]}
-              camera={{ position: [2.6, 2.4, 2.6], fov: 50 }}
-              gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
-            >
-              <ambientLight intensity={0.6} />
-              <directionalLight
-                position={[4, 6, 5]}
-                intensity={1.15}
-                castShadow
-                shadow-mapSize-width={1024}
-                shadow-mapSize-height={1024}
-              />
-              {/* ground & contact shadow for depth */}
-              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.0001, 0]}>
-                <planeGeometry args={[10, 10]} />
-                <meshStandardMaterial color={"#ccd6e0"} roughness={0.95} />
-              </mesh>
-              <ContactShadows position={[0, 0, 0]} opacity={0.45} scale={8} blur={2.1} far={6} />
-
-              {/* live draft preset */}
-              <group position={[0, 0, 0]}>
-                <HeroRig3D preset={draft} />
-              </group>
-
-              <OrbitControls
-                enablePan={false}
-                minPolarAngle={Math.PI / 3.2}
-                maxPolarAngle={Math.PI / 2}
-              />
-            </Canvas>
-          </div>
+          <Preview3D preset={draft} />
 
           {/* Controls */}
           <div className="eva-controls">
@@ -142,7 +110,92 @@ export default function AvatarStudio({ open, onClose, initial, onSave }: AvatarS
   );
 }
 
-/* ---------- UI bits ---------- */
+/* ---------- 3D Preview with better framing + quick views ---------- */
+
+function Preview3D({ preset }: { preset: AvatarPreset }) {
+  const controls = useRef<any>(null);
+  const target = new THREE.Vector3(0, 1.0, 0);     // look at upper chest
+  const fitDistance = 3.0;                          // keeps whole body in frame
+  const front = () => setView(0, 1.05, fitDistance);
+  const left = () => setView(-Math.PI / 2, 1.05, fitDistance);
+  const right = () => setView(Math.PI / 2, 1.05, fitDistance);
+  const back = () => setView(Math.PI, 1.05, fitDistance);
+  const fit = () => setView(controls.current?.getAzimuthalAngle?.() ?? 0, 1.05, fitDistance);
+
+  function setView(azimuth: number, polar: number, radius: number) {
+    if (!controls.current) return;
+    const c = controls.current;
+    const cam = c.object as THREE.PerspectiveCamera;
+
+    // move camera to spherical around target
+    const s = new THREE.Spherical(radius, polar, azimuth);
+    const pos = new THREE.Vector3().setFromSpherical(s).add(target);
+    cam.position.copy(pos);
+    c.target.copy(target);
+    c.update();
+  }
+
+  // set a good default on mount
+  useEffect(() => {
+    // Front view
+    setTimeout(() => front(), 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="eva-preview3d">
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ position: [0, 1.8, 3], fov: 50 }} // front-facing default
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+      >
+        <ambientLight intensity={0.6} />
+        <directionalLight
+          position={[4, 6, 5]}
+          intensity={1.15}
+          castShadow
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+        />
+        {/* ground & contact shadow */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.0001, 0]}>
+          <planeGeometry args={[10, 10]} />
+          <meshStandardMaterial color={"#ccd6e0"} roughness={0.95} />
+        </mesh>
+        <ContactShadows position={[0, 0, 0]} opacity={0.45} scale={8} blur={2.1} far={6} />
+
+        {/* live draft preset */}
+        <group position={[0, 0, 0]}>
+          <HeroRig3D preset={preset} />
+        </group>
+
+        <OrbitControls
+          ref={controls}
+          enablePan={false}
+          enableDamping
+          dampingFactor={0.08}
+          // keep camera above the ground and not too high
+          minPolarAngle={0.7}   // ~40°
+          maxPolarAngle={1.45}  // ~83°
+          minDistance={2.0}
+          maxDistance={4.0}
+        />
+      </Canvas>
+
+      {/* Quick views */}
+      <div className="eva-quick">
+        <button onClick={front}>Front</button>
+        <button onClick={left}>Left</button>
+        <button onClick={right}>Right</button>
+        <button onClick={back}>Back</button>
+        <button onClick={fit}>Fit</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- tiny UI helpers ---------- */
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -181,14 +234,17 @@ function OutfitCard({
   );
 }
 
-/* ---------- styles (scoped to modal) ---------- */
+/* ---------- styles (scoped) ---------- */
 
 const styles = `
 .eva-modalRoot{ position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.4); z-index:50; }
 .eva-modalCard{ width:min(1100px, 96vw); background:#0e1628; border:1px solid rgba(255,255,255,.08); border-radius:16px; box-shadow:0 20px 80px rgba(0,0,0,.35); }
 .eva-modalHead{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid rgba(255,255,255,.06); }
-.eva-modalBody{ display:grid; grid-template-columns: 480px 1fr; gap:18px; padding:16px; }
-.eva-preview3d{ height:460px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:12px; overflow:hidden; }
+.eva-modalBody{ display:grid; grid-template-columns: 520px 1fr; gap:18px; padding:16px; }
+.eva-preview3d{ height:520px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:12px; overflow:hidden; position:relative; }
+.eva-quick{ position:absolute; left:10px; bottom:10px; display:flex; gap:6px; }
+.eva-quick button{ background:rgba(255,255,255,.08); color:#e6edf7; border:1px solid rgba(255,255,255,.15); border-radius:8px; padding:6px 10px; cursor:pointer; }
+.eva-quick button:hover{ background:rgba(255,255,255,.14); }
 .eva-controls{ display:flex; flex-direction:column; gap:14px; }
 .eva-section{ display:flex; flex-direction:column; gap:8px; }
 .eva-label{ font-weight:700; opacity:.9; }
