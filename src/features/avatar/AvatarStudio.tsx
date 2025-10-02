@@ -1,7 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, ContactShadows, Sky } from "@react-three/drei";
-import HeroRig3D from "./HeroRig3D";
+// src/features/avatar/AvatarStudio.tsx
+import React, { useState } from "react";
 import { useAvatar, AvatarPreset } from "../../state/avatar";
 import { useInventory } from "../../state/inventory";
 
@@ -19,7 +17,6 @@ export default function AvatarStudio({ open, onClose }: Props) {
   const { preset, setPreset } = useAvatar();
   const inv = useInventory();
 
-  // local draft
   const [draft, setDraft] = useState<AvatarPreset>({ ...preset });
 
   function choose<K extends keyof AvatarPreset>(key: K, val: AvatarPreset[K]) {
@@ -31,8 +28,8 @@ export default function AvatarStudio({ open, onClose }: Props) {
     onClose();
   }
 
-  const ownRunner = inv.isOwned("outfit_runner");
-  const ownAstro = inv.isOwned("outfit_astro");
+  const ownRunner = inv.isOwned?.("outfit_runner") ?? true; // assume owned if API absent
+  const ownAstro  = inv.isOwned?.("outfit_astro")  ?? false;
 
   return (
     <div className="studio-overlay" role="dialog" aria-modal="true">
@@ -40,47 +37,17 @@ export default function AvatarStudio({ open, onClose }: Props) {
         <div className="title">Create-Your-Hero</div>
 
         <div className="content">
-          {/* LEFT: 3D Preview — All R3F/Drei is INSIDE Canvas */}
-          <div className="preview">
-            <Canvas
-              shadows
-              camera={{ position: [2.3, 2.0, 2.3], fov: 55 }}
-              gl={{ antialias: true }}
-            >
-              <ambientLight intensity={0.5} />
-              <directionalLight
-                position={[5, 8, 5]}
-                intensity={1.2}
-                castShadow
-                shadow-mapSize-width={2048}
-                shadow-mapSize-height={2048}
-              />
-              <Sky sunPosition={[100, 20, 100]} />
-
-              {/* ground */}
-              <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-                <planeGeometry args={[20, 20]} />
-                <meshStandardMaterial color={"#b7c0c9"} roughness={0.95} />
-              </mesh>
-              <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.0} far={8} />
-
-              {/* hero */}
-              <group position={[0, 0, 0]}>
-                <HeroRig3D preset={draft} />
-              </group>
-
-              <OrbitControls enablePan={false} />
-            </Canvas>
+          {/* LEFT: temporary non-3D preview box (we add Canvas in step 2) */}
+          <div className="preview-plain">
+            <div className="placeholder">
+              3D preview disabled for step 1<br/> (no R3F hooks here)
+            </div>
           </div>
 
-          {/* RIGHT: Controls (plain React — no R3F hooks here) */}
+          {/* RIGHT: controls */}
           <div className="panel">
             <Section title="Body">
-              <PillRow
-                options={BODIES}
-                value={draft.body}
-                onSelect={(v) => choose("body", v)}
-              />
+              <PillRow options={BODIES} value={draft.body} onSelect={(v) => choose("body", v)} />
             </Section>
 
             <Section title="Skin tone">
@@ -98,27 +65,15 @@ export default function AvatarStudio({ open, onClose }: Props) {
             </Section>
 
             <Section title="Hair">
-              <PillRow
-                options={HAIRS}
-                value={draft.hair}
-                onSelect={(v) => choose("hair", v)}
-              />
+              <PillRow options={HAIRS} value={draft.hair} onSelect={(v) => choose("hair", v)} />
             </Section>
 
             <Section title="Eyes">
-              <PillRow
-                options={EYES}
-                value={draft.eyes}
-                onSelect={(v) => choose("eyes", v)}
-              />
+              <PillRow options={EYES} value={draft.eyes} onSelect={(v) => choose("eyes", v)} />
             </Section>
 
             <Section title="Expression">
-              <PillRow
-                options={EXPRS}
-                value={draft.expr}
-                onSelect={(v) => choose("expr", v)}
-              />
+              <PillRow options={EXPRS} value={draft.expr} onSelect={(v) => choose("expr", v)} />
             </Section>
 
             <Section title="Outfit (cosmetic)">
@@ -127,14 +82,14 @@ export default function AvatarStudio({ open, onClose }: Props) {
                   title="Runner Set"
                   owned={ownRunner}
                   active={draft.outfitId === "outfit_runner"}
-                  onClick={() => ownRunner ? choose("outfitId", "outfit_runner") : alert("Owned by default")}
+                  onClick={() => ownRunner ? choose("outfitId", "outfit_runner") : alert("Locked")}
                   swatch="#1f3e76"
                 />
                 <OutfitCard
                   title="Astro Set"
                   owned={ownAstro}
                   active={draft.outfitId === "outfit_astro"}
-                  onClick={() => ownAstro ? choose("outfitId", "outfit_astro") : alert("Buy in Store")}
+                  onClick={() => ownAstro ? choose("outfitId", "outfit_astro") : alert("Buy it in Store")}
                   swatch="#2a9dad"
                 />
               </div>
@@ -155,7 +110,7 @@ export default function AvatarStudio({ open, onClose }: Props) {
   );
 }
 
-/* ---------- presentational bits (no R3F hooks) ---------- */
+/* ---------- UI bits ---------- */
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -218,7 +173,7 @@ const STYLES = `
 .studio{position:relative;width:min(1100px,95vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
 .title{font-size:20px;font-weight:800}
 .content{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
-.preview{height:460px;background:#0e162a;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+.preview-plain{height:460px;background:#0e162a;border-radius:12px;border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;color:#8aa3c0}
 .panel{display:flex;flex-direction:column;gap:14px}
 .section{display:flex;flex-direction:column;gap:8px}
 .section-title{font-weight:700}
@@ -240,6 +195,6 @@ const STYLES = `
 .close{position:absolute;top:6px;right:10px;border:none;background:transparent;color:#9fb0c7;font-size:20px;cursor:pointer}
 @media (max-width: 900px){
   .content{grid-template-columns:1fr;gap:10px}
-  .preview{height:380px}
+  .preview-plain{height:380px}
 }
 `;
