@@ -1,13 +1,16 @@
-// src/features/avatar/HeroRig3D.tsx
 import * as THREE from "three";
-import { GroupProps } from "@react-three/fiber";
+import { GroupProps, useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { AvatarPreset } from "../../state/avatar";
 
 /**
- * Pure-geometry rig (no R3F hooks), safe even if accidentally
- * rendered outside <Canvas>. You can re-add idle animation later.
+ * HeroRig3D (procedural, original)
+ * - Head & neck are parented to the torso (no floating)
+ * - Rounded capsule limbs, rounded torso, simple shoes
+ * - Subtle idle animation
+ * - Materials tuned for soft, toy-like look (no external assets)
  */
+
 export default function HeroRig3D({
   preset,
   ...props
@@ -15,19 +18,37 @@ export default function HeroRig3D({
   const root = useRef<THREE.Group>(null!);
   const gTorso = useRef<THREE.Group>(null!);
   const gHead = useRef<THREE.Group>(null!);
+  const gLA = useRef<THREE.Group>(null!);
+  const gRA = useRef<THREE.Group>(null!);
+  const gLL = useRef<THREE.Group>(null!);
+  const gRL = useRef<THREE.Group>(null!);
 
-  // palette
+  // appearance from preset
   const skin = useMemo(() => skinHex(preset?.skin), [preset?.skin]);
-  const hairColor = "#27334d";
-  const top = useMemo(() => outfitTop(preset?.outfitId), [preset?.outfitId]);
-  const bottom = useMemo(() => outfitBottom(preset?.outfitId), [preset?.outfitId]);
-  const shoe = useMemo(() => outfitShoes(preset?.outfitId), [preset?.outfitId]);
+  const hair = useMemo(() => "#27334d", []);
+  const shirt = useMemo(() => outfitTop(preset?.outfitId), [preset?.outfitId]);
+  const pants = useMemo(() => outfitBottom(preset?.outfitId), [preset?.outfitId]);
+  const shoes = useMemo(() => outfitShoes(preset?.outfitId), [preset?.outfitId]);
   const bodyScale = useMemo(() => bodyScaleFor(preset?.body), [preset?.body]);
+  const mouthShape = useMemo(() => mouthFor(preset?.expr), [preset?.expr]);
+
+  // idle
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    root.current.rotation.y = Math.sin(t * 1.4) * 0.05;
+    gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * 0.012;
+    gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * 0.06;
+    gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * 0.06;
+    gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * 0.04;
+    gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * 0.04;
+  });
 
   return (
     <group ref={root} {...props} scale={bodyScale} castShadow receiveShadow>
-      {/* Torso */}
+      {/* Pelvis height baseline: feet at ~0 */}
+      {/* ---- Torso group (head/neck are children so they stay attached) ---- */}
       <group ref={gTorso} position={[0, 0.9, 0]}>
+        {/* base torso */}
         <mesh castShadow receiveShadow>
           {(THREE as any).CapsuleGeometry ? (
             <capsuleGeometry args={[0.46, 0.64, 8, 16]} />
@@ -36,54 +57,71 @@ export default function HeroRig3D({
           )}
           <meshStandardMaterial color={"#1b2b4b"} roughness={0.7} metalness={0.05} />
         </mesh>
-        {/* shirt shell */}
+
+        {/* shirt overlay */}
         <mesh position={[0, 0.01, 0]} scale={[1.015, 1.02, 1.02]} castShadow receiveShadow>
           {(THREE as any).CapsuleGeometry ? (
             <capsuleGeometry args={[0.47, 0.66, 8, 16]} />
           ) : (
             <boxGeometry args={[0.94, 1.12, 0.52]} />
           )}
-          <meshStandardMaterial color={top} roughness={0.5} metalness={0.08} />
+          <meshStandardMaterial color={shirt} roughness={0.5} metalness={0.08} />
         </mesh>
 
-        {/* neck */}
-        <mesh position={[0, 0.64, 0]} castShadow>
+        {/* neck (relative to torso top) */}
+        <mesh position={[0, 0.64, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[0.12, 0.12, 0.14, 16]} />
           <meshStandardMaterial color={skin} roughness={0.85} />
         </mesh>
 
-        {/* Head */}
+        {/* head (child of torso -> never floats) */}
         <group ref={gHead} position={[0, 0.85, 0]}>
           <mesh castShadow>
             <sphereGeometry args={[0.34, 32, 32]} />
             <meshStandardMaterial color={skin} roughness={0.85} />
           </mesh>
 
-          {/* Hair / Face */}
-          {buildHair(preset?.hair, hairColor)}
-          {buildEyes(preset?.eyes)}
-          {buildBrows(preset?.eyes)}
-          {buildMouth(preset?.expr)}
+          {/* hair */}
+          {hairStyle(preset?.hair, hair)}
+
+          {/* eyes */}
+          <mesh position={[-0.12, 0.02, 0.29]} castShadow>
+            <sphereGeometry args={[0.035, 16, 16]} />
+            <meshStandardMaterial color={"#0b0f16"} />
+          </mesh>
+          <mesh position={[0.12, 0.02, 0.29]} castShadow>
+            <sphereGeometry args={[0.035, 16, 16]} />
+            <meshStandardMaterial color={"#0b0f16"} />
+          </mesh>
+
+          {/* brows */}
+          {brows(preset?.eyes)}
+
+          {/* mouth */}
+          <mesh position={[0, -0.07, 0.3]} rotation={[0, 0, mouthShape.rotate]} castShadow>
+            <boxGeometry args={[mouthShape.w, mouthShape.h, 0.03]} />
+            <meshStandardMaterial color={"#0b0f16"} />
+          </mesh>
         </group>
       </group>
 
-      {/* Arms */}
-      <group position={[-0.58, 0.95, 0]}>
-        <Arm skin={skin} sleeve={top} mirror={false} />
+      {/* ---- Arms (parented to torso so they follow breathing) ---- */}
+      <group ref={gLA} position={[-0.58, 0.95, 0]}>
+        <Arm skin={skin} sleeve={shirt} mirror={false} />
       </group>
-      <group position={[0.58, 0.95, 0]}>
-        <Arm skin={skin} sleeve={top} mirror />
-      </group>
-
-      {/* Legs */}
-      <group position={[-0.22, 0.46, 0]}>
-        <Leg pants={bottom} skin={skin} shoes={shoe} />
-      </group>
-      <group position={[0.22, 0.46, 0]}>
-        <Leg pants={bottom} skin={skin} shoes={shoe} />
+      <group ref={gRA} position={[0.58, 0.95, 0]}>
+        <Arm skin={skin} sleeve={shirt} mirror />
       </group>
 
-      {/* Astro win FX */}
+      {/* ---- Legs (root space; pelvis near y ~0.46) ---- */}
+      <group ref={gLL} position={[-0.22, 0.46, 0]}>
+        <Leg pants={pants} skin={skin} shoes={shoes} />
+      </group>
+      <group ref={gRL} position={[0.22, 0.46, 0]}>
+        <Leg pants={pants} skin={skin} shoes={shoes} />
+      </group>
+
+      {/* win FX */}
       {preset?.outfitId === "outfit_astro" && (
         <mesh position={[0, 1.15, -0.28]} rotation={[0, 0, Math.PI / 10]} castShadow>
           <boxGeometry args={[1.0, 0.06, 0.06]} />
@@ -94,7 +132,7 @@ export default function HeroRig3D({
   );
 }
 
-/* ---------- parts ---------- */
+/* ---------------- parts ---------------- */
 
 function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: boolean }) {
   const side = mirror ? -1 : 1;
@@ -109,7 +147,7 @@ function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: 
         )}
         <meshStandardMaterial color={skin} roughness={0.85} />
       </mesh>
-      {/* sleeve */}
+      {/* short sleeve */}
       <mesh position={[side * 0.08, -0.05, 0]} scale={[1.06, 0.6, 1.06]} castShadow>
         {(THREE as any).CapsuleGeometry ? (
           <capsuleGeometry args={[0.12, 0.18, 8, 12]} />
@@ -139,6 +177,7 @@ function Arm({ skin, sleeve, mirror }: { skin: string; sleeve: string; mirror?: 
 function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: string }) {
   return (
     <group>
+      {/* thigh */}
       <mesh position={[0, -0.18, 0]} castShadow>
         {(THREE as any).CapsuleGeometry ? (
           <capsuleGeometry args={[0.13, 0.32, 8, 12]} />
@@ -147,6 +186,7 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
         )}
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
+      {/* calf */}
       <mesh position={[0.02, -0.54, 0]} castShadow>
         {(THREE as any).CapsuleGeometry ? (
           <capsuleGeometry args={[0.12, 0.34, 8, 12]} />
@@ -155,6 +195,7 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
         )}
         <meshStandardMaterial color={pants} roughness={0.6} />
       </mesh>
+      {/* foot */}
       <mesh position={[0.05, -0.86, 0.09]} castShadow receiveShadow>
         <boxGeometry args={[0.32, 0.12, 0.42]} />
         <meshStandardMaterial color={shoes} roughness={0.35} metalness={0.1} />
@@ -167,180 +208,80 @@ function Leg({ pants, skin, shoes }: { pants: string; skin: string; shoes: strin
   );
 }
 
-/* ---------- face & hair ---------- */
+/* ---------------- helpers ---------------- */
 
-const Z_FRONT = 0.305;
-const E_EM = "#0d1117";
-
-function buildHair(style: AvatarPreset["hair"] | undefined, color: string) {
-  const r = 0.34;
+function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
   const y = 0.12;
-
   switch (style) {
-    case "Short":
+    case "Buzz":
       return (
-        <>
-          <mesh position={[0, y, 0]} castShadow>
-            <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.65, Math.PI * 0.4]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.02, 0]} castShadow>
-            <cylinderGeometry args={[r * 0.86, r * 0.86, 0.06, 32]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-        </>
-      );
-    case "Ponytail":
-      return (
-        <>
-          <mesh position={[0, y + 0.02, 0]} castShadow>
-            <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.55]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.03, -0.32]} rotation={[0.5, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.08, 0.12, 0.6, 16]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-          <mesh position={[0, y - 0.27, -0.55]} castShadow>
-            <sphereGeometry args={[0.12, 16, 16]} />
-            <meshStandardMaterial color={color} roughness={0.75} />
-          </mesh>
-        </>
+        <mesh position={[0, y, 0]} castShadow>
+          <sphereGeometry args={[0.34, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color={color} roughness={0.85} />
+        </mesh>
       );
     case "Curly":
       return (
         <group position={[0, y + 0.02, 0]}>
-          {[-0.18, -0.06, 0.06, 0.18].map((x, i) => (
-            <mesh key={"c" + i} position={[x, 0.06, -0.02]} castShadow>
-              <sphereGeometry args={[0.14, 16, 16]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
-            </mesh>
-          ))}
-          {[-0.12, 0.12].map((x, i) => (
-            <mesh key={"c2" + i} position={[x, -0.02, 0.12]} castShadow>
-              <sphereGeometry args={[0.12, 16, 16]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
+          {[-0.18, 0, 0.18].map((x, i) => (
+            <mesh key={i} position={[x, 0.03, -0.02]} castShadow>
+              <sphereGeometry args={[0.18, 16, 16]} />
+              <meshStandardMaterial color={color} roughness={0.75} />
             </mesh>
           ))}
         </group>
       );
-    case "Buzz":
+    case "Ponytail":
       return (
-        <mesh position={[0, y + 0.01, 0]} castShadow>
-          <sphereGeometry args={[r, 32, 32, 0, Math.PI * 2, Math.PI * 0.78, Math.PI * 0.35]} />
-          <meshStandardMaterial color={color} roughness={0.9} />
+        <group>
+          <mesh position={[0, y + 0.02, -0.01]} castShadow>
+            <cylinderGeometry args={[0.36, 0.33, 0.15, 24]} />
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+          <mesh position={[0.23, y - 0.06, -0.1]} rotation={[0, 0, -0.6]} castShadow>
+            <cylinderGeometry args={[0.05, 0.07, 0.45, 12]} />
+            <meshStandardMaterial color={color} roughness={0.8} />
+          </mesh>
+        </group>
+      );
+    case "Short":
+    default:
+      return (
+        <mesh position={[0, y + 0.02, 0]} castShadow>
+          <cylinderGeometry args={[0.38, 0.34, 0.18, 24]} />
+          <meshStandardMaterial color={color} roughness={0.8} />
         </mesh>
       );
-    default:
-      return null;
   }
 }
 
-function buildEyes(kind: AvatarPreset["eyes"] | undefined) {
-  const white = "#f2f6ff";
-  const black = "#0b0f16";
-  const lx = -0.12, rx = 0.12, y = 0.02, z = Z_FRONT;
-
-  switch (kind) {
-    case "Round":
-      return (
-        <group>
-          <mesh position={[lx, y, z]}><sphereGeometry args={[0.052, 20, 20]} /><meshStandardMaterial color={white} roughness={1} /></mesh>
-          <mesh position={[rx, y, z]}><sphereGeometry args={[0.052, 20, 20]} /><meshStandardMaterial color={white} roughness={1} /></mesh>
-          <mesh position={[lx, y, z + 0.002]}><sphereGeometry args={[0.026, 20, 20]} /><meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} /></mesh>
-          <mesh position={[rx, y, z + 0.002]}><sphereGeometry args={[0.026, 20, 20]} /><meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} /></mesh>
-        </group>
-      );
-    case "Sharp":
-      return (
-        <group>
-          {[lx, rx].map((x, i) => (
-            <mesh key={i} position={[x, y + 0.004, z]} rotation={[0, 0, i === 0 ? 0.15 : -0.15]}>
-              <sphereGeometry args={[0.06, 20, 20]} />
-              <meshStandardMaterial color={white} roughness={1} />
-            </mesh>
-          ))}
-          {[lx, rx].map((x, i) => (
-            <mesh key={"p" + i} position={[x, y, z + 0.003]}>
-              <sphereGeometry args={[0.022, 20, 20]} />
-              <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.4} />
-            </mesh>
-          ))}
-        </group>
-      );
-    case "Happy":
-      return (
-        <group>
-          <mesh position={[lx, y + 0.015, z + 0.002]} rotation={[0, 0, Math.PI * 0.95]}>
-            <torusGeometry args={[0.055, 0.012, 8, 24, Math.PI * 0.8]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-          </mesh>
-          <mesh position={[rx, y + 0.015, z + 0.002]} rotation={[0, 0, Math.PI * 0.05]}>
-            <torusGeometry args={[0.055, 0.012, 8, 24, Math.PI * 0.8]} />
-            <meshStandardMaterial color={black} emissive={E_EM} emissiveIntensity={0.35} />
-          </mesh>
-        </group>
-      );
-    default:
-      return null;
-  }
-}
-
-function buildBrows(kind: AvatarPreset["eyes"] | undefined) {
-  const z = Z_FRONT - 0.002;
-  let tilt = 0, arch = 0;
-  if (kind === "Sharp") tilt = 0.35;
-  if (kind === "Happy") arch = -0.18;
+function brows(style: AvatarPreset["eyes"] | undefined) {
+  const y = 0.1;
+  const z = 0.29;
+  const tilt = style === "Sharp" ? 0.35 : style === "Happy" ? -0.2 : 0;
   return (
     <group>
-      <mesh position={[-0.12, 0.1, z]} rotation={[0, 0, tilt || arch]} castShadow>
+      <mesh position={[-0.12, y, z]} rotation={[0, 0, tilt]} castShadow>
         <boxGeometry args={[0.12, 0.015, 0.02]} />
-        <meshStandardMaterial color={"#0b0f16"} emissive={"#0d1117"} emissiveIntensity={0.25} />
+        <meshStandardMaterial color={"#0b0f16"} />
       </mesh>
-      <mesh position={[0.12, 0.1, z]} rotation={[0, 0, -(tilt || arch)]} castShadow>
+      <mesh position={[0.12, y, z]} rotation={[0, 0, -tilt]} castShadow>
         <boxGeometry args={[0.12, 0.015, 0.02]} />
-        <meshStandardMaterial color={"#0b0f16"} emissive={"#0d1117"} emissiveIntensity={0.25} />
+        <meshStandardMaterial color={"#0b0f16"} />
       </mesh>
     </group>
   );
 }
 
-function buildMouth(expr: AvatarPreset["expr"] | undefined) {
-  const black = "#0b0f16";
+function mouthFor(expr: AvatarPreset["expr"] | undefined) {
   switch (expr) {
-    case "Smile":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]} rotation={[0, 0, Math.PI]}>
-          <torusGeometry args={[0.12, 0.015, 8, 24, Math.PI * 0.85]} />
-          <meshStandardMaterial color={black} emissive={"#0d1117"} emissiveIntensity={0.35} />
-        </mesh>
-      );
-    case "Wow":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]}>
-          <torusGeometry args={[0.05, 0.025, 8, 24, Math.PI * 2]} />
-          <meshStandardMaterial color={black} emissive={"#0d1117"} emissiveIntensity={0.35} />
-        </mesh>
-      );
-    case "Determined":
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]} rotation={[0, 0, 0.2]}>
-          <boxGeometry args={[0.18, 0.02, 0.02]} />
-          <meshStandardMaterial color={black} emissive={"#0d1117"} emissiveIntensity={0.35} />
-        </mesh>
-      );
+    case "Smile": return { w: 0.20, h: 0.02, rotate: -0.15 };
+    case "Wow": return { w: 0.08, h: 0.08, rotate: 0 };
+    case "Determined": return { w: 0.16, h: 0.02, rotate: 0.2 };
     case "Neutral":
-    default:
-      return (
-        <mesh position={[0, -0.065, Z_FRONT + 0.002]}>
-          <boxGeometry args={[0.16, 0.02, 0.02]} />
-          <meshStandardMaterial color={black} emissive={"#0d1117"} emissiveIntensity={0.35} />
-        </mesh>
-      );
+    default: return { w: 0.16, h: 0.02, rotate: 0 };
   }
 }
-
-/* ---------- helpers ---------- */
 
 function bodyScaleFor(body: AvatarPreset["body"] | undefined): number {
   switch (body) {
@@ -350,6 +291,7 @@ function bodyScaleFor(body: AvatarPreset["body"] | undefined): number {
     default: return 1.02;
   }
 }
+
 function skinHex(s?: AvatarPreset["skin"]) {
   switch (s) {
     case "Very Light": return "#f6d7c3";
@@ -360,6 +302,12 @@ function skinHex(s?: AvatarPreset["skin"]) {
     default:           return "#e9bda1";
   }
 }
-function outfitTop(id?: AvatarPreset["outfitId"])     { return id === "outfit_astro" ? "#1e2a44" : "#21407a"; }
-function outfitBottom(id?: AvatarPreset["outfitId"])  { return id === "outfit_astro" ? "#2a3b5e" : "#1b335f"; }
-function outfitShoes(id?: AvatarPreset["outfitId"])   { return id === "outfit_astro" ? "#2a9dad" : "#0ea5e9"; }
+function outfitTop(id?: AvatarPreset["outfitId"]) {
+  return id === "outfit_astro" ? "#1e2a44" : "#21407a";
+}
+function outfitBottom(id?: AvatarPreset["outfitId"]) {
+  return id === "outfit_astro" ? "#2a3b5e" : "#1b335f";
+}
+function outfitShoes(id?: AvatarPreset["outfitId"]) {
+  return id === "outfit_astro" ? "#2a9dad" : "#0ea5e9";
+}
