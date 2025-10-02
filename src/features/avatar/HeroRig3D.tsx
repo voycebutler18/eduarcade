@@ -219,18 +219,16 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
   const yTop = 0.12; // crown shift
 
   switch (style) {
-    /** * CLOSE-CUT CAP that reads as "short hair" 
-     * This style combines two shapes to create a stylized flat-top or sailor-hat look.
-     */
+    /** CLOSE-CUT CAP that reads as "short hair" */
     case "Short":
       return (
         <group>
-          {/* This cylinder creates a wide, flat ring around the head, like the brim of a cap. */}
+          {/* cap ring (sides) */}
           <mesh position={[0, yTop + 0.02, 0]} castShadow>
             <cylinderGeometry args={[R + 0.02, R - 0.02, 0.18, 32]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* This is a shallow slice of a sphere, creating the flat top part. */}
+          {/* top disk */}
           <mesh position={[0, yTop + 0.12, 0]} castShadow>
             <sphereGeometry args={[R + 0.015, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4]} />
             <meshStandardMaterial color={color} roughness={0.8} />
@@ -238,23 +236,21 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
         </group>
       );
 
-    /** * PONYTAIL: a headband + tube of hair behind 
-     * This is built from three distinct pieces.
-     */
+    /** PONYTAIL: a headband + tube of hair behind */
     case "Ponytail":
       return (
         <group>
-          {/* A Torus (donut shape) is used to create the headband. */}
+          {/* headband */}
           <mesh position={[0, yTop + 0.04, 0]} castShadow>
             <torusGeometry args={[R + 0.02, 0.03, 16, 48]} />
             <meshStandardMaterial color={color} roughness={0.75} />
           </mesh>
-          {/* A sphere slice covers the scalp to represent hair on the head. */}
+          {/* crown hair */}
           <mesh position={[0, yTop + 0.05, 0]} castShadow>
             <sphereGeometry args={[R + 0.02, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.2]} />
             <meshStandardMaterial color={color} roughness={0.8} />
           </mesh>
-          {/* A capsule (cylinder with round ends) acts as the stylized ponytail at the back. */}
+          {/* ponytail tube */}
           <mesh position={[0, yTop - 0.03, -0.22]} rotation={[0.35, 0, 0]} castShadow>
             {(THREE as any).CapsuleGeometry ? (
               <capsuleGeometry args={[0.09, 0.45, 8, 12]} />
@@ -266,13 +262,11 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
         </group>
       );
 
-    /** * CURLY: clusters of balls around the crown 
-     * This style literally uses a pattern of spheres to suggest the volume and texture of curls.
-     */
+    /** CURLY: clusters of balls around the crown */
     case "Curly":
       return (
         <group position={[0, yTop + 0.02, 0]}>
-          {[ // An array of 9 positions for each "curl" sphere.
+          {[
             [-0.20, 0.06, 0.00], [0, 0.08, 0.00], [0.20, 0.06, 0.00],
             [-0.16, 0.03, 0.14], [0.0, 0.04, 0.16], [0.16, 0.03, 0.14],
             [-0.16, 0.03, -0.14], [0.0, 0.02, -0.16], [0.16, 0.03, -0.14],
@@ -285,13 +279,11 @@ function hairStyle(style: AvatarPreset["hair"] | undefined, color: string) {
         </group>
       );
 
-    /** * BUZZ: very thin cap hugging the scalp 
-     * This is represented by a single, very shallow slice of a sphere that sits close to the head.
-     */
+    /** BUZZ: very thin cap hugging the scalp */
     case "Buzz":
       return (
         <mesh position={[0, yTop + 0.01, 0]} castShadow>
-          {/* The radius is only 0.005 larger than the head, creating the scalp-hugging look. */}
+          {/* thin hemisphere slice (thetaLength small) */}
           <sphereGeometry args={[R + 0.005, 32, 16, 0, Math.PI * 2, 0, Math.PI / 4.5]} />
           <meshStandardMaterial color={color} roughness={0.9} />
         </mesh>
