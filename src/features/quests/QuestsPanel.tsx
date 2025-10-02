@@ -6,10 +6,6 @@ import { useProfile } from "../../state/profile";
  * - Daily & Weekly quests with simple local tracking (per-username)
  * - Claim rewards to grant Coins immediately
  * - Auto-regenerates new daily set each day and weekly set each Monday
- *
- * Integration idea:
- *   import QuestsPanel from "./features/quests/QuestsPanel";
- *   // Show under the Play tab (e.g., above Chat or below Queue button)
  */
 
 type QuestKind = "daily" | "weekly";
@@ -25,8 +21,8 @@ type Quest = {
 };
 
 type SaveBlob = {
-  dkey: string; // daily key
-  wkey: string; // weekly key
+  dkey: string; // daily key (UTC date)
+  wkey: string; // weekly key (UTC week)
   dailies: Quest[];
   weeklies: Quest[];
 };
@@ -36,15 +32,14 @@ function todayKeyUTC() {
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
 function weekKeyUTC() {
-  // ISO week seeded by the Monday of this week (UTC)
+  // Monday of the current ISO week (UTC) → string key
   const d = new Date();
   const day = d.getUTCDay(); // 0..6, Sun..Sat
-  const diffToMon = (day + 6) % 7; // 0 if Mon
+  const diffToMon = (day + 6) % 7;
   const mon = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diffToMon));
   return `${mon.getUTCFullYear()}-W${pad2(weekNumber(mon))}`;
 }
 function weekNumber(mon: Date) {
-  // approximate ISO week index within the year (for key only)
   const start = new Date(Date.UTC(mon.getUTCFullYear(), 0, 1));
   const diff = Number(mon) - Number(start);
   return Math.floor(diff / (7 * 24 * 3600 * 1000)) + 1;
@@ -57,7 +52,6 @@ function uid() {
 }
 
 function makeDailySet(): Quest[] {
-  // lightweight pool; rotate variants later
   const pool: Omit<Quest, "id" | "progress" | "done" | "claimed">[] = [
     { kind: "daily", title: "Pass a 5-Q Skill Check", rewardCoins: 60, target: 1 },
     { kind: "daily", title: "Queue for a Party Playlist", rewardCoins: 40, target: 1 },
@@ -66,30 +60,18 @@ function makeDailySet(): Quest[] {
     { kind: "daily", title: "Send 3 friendly chat messages", rewardCoins: 45, target: 3 },
   ];
   const picks = shuffle(pool).slice(3); // 2–3 dailies
-  return picks.map((q) => ({
-    ...q,
-    id: `d_${uid()}`,
-    progress: 0,
-    done: false,
-    claimed: false,
-  }));
+  return picks.map((q) => ({ ...q, id: `d_${uid()}`, progress: 0, done: false, claimed: false }));
 }
 
 function makeWeeklySet(): Quest[] {
   const pool: Omit<Quest, "id" | "progress" | "done" | "claimed">[] = [
     { kind: "weekly", title: "Complete 5 Skill Checks", rewardCoins: 220, target: 5 },
-    { kind: "weekly", title: "Build Worlds: publish or export 1 map", rewardCoins: 180, target: 1 },
+    { kind: "weekly", title: "Build Worlds: publish/export 1 map", rewardCoins: 180, target: 1 },
     { kind: "weekly", title: "Earn 3 new cosmetic items", rewardCoins: 200, target: 3 },
-    { kind: "weekly", title: "Chat: send 15 positive messages", rewardCoins: 150, target: 15 },
+    { kind: "weekly", title: "Send 15 positive chat messages", rewardCoins: 150, target: 15 },
   ];
   const picks = shuffle(pool).slice(2); // 2 weeklies
-  return picks.map((q) => ({
-    ...q,
-    id: `w_${uid()}`,
-    progress: 0,
-    done: false,
-    claimed: false,
-  }));
+  return picks.map((q) => ({ ...q, id: `w_${uid()}`, progress: 0, done: false, claimed: false }));
 }
 
 function shuffle<T>(arr: T[]) {
@@ -99,6 +81,18 @@ function shuffle<T>(arr: T[]) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+/** NEW: summarize helper that the panel uses */
+function summarize(list: Quest[]) {
+  const total = list.length;
+  let done = 0,
+    claimed = 0;
+  for (const q of list) {
+    if (q.done) done++;
+    if (q.claimed) claimed++;
+  }
+  return { total, done, claimed };
 }
 
 export default function QuestsPanel() {
@@ -116,13 +110,12 @@ export default function QuestsPanel() {
     if (raw) {
       try {
         const parsed: SaveBlob = JSON.parse(raw);
-        // Rotate dailies/weeklies if keys changed
         const dailies = parsed.dkey === dkey ? parsed.dailies : makeDailySet();
         const weeklies = parsed.wkey === wkey ? parsed.weeklies : makeWeeklySet();
         setBlob({ dkey, wkey, dailies, weeklies });
         return;
       } catch {
-        // fallthrough to regenerate
+        /* fallthrough to regenerate */
       }
     }
     setBlob({ dkey, wkey, dailies: makeDailySet(), weeklies: makeWeeklySet() });
@@ -175,7 +168,9 @@ export default function QuestsPanel() {
     <div className="quests">
       <div className="hdr">
         <h3 style={{ margin: 0 }}>Quests</h3>
-        <div className="muted small">Daily refresh (UTC): {blob.dkey} • Weekly: {blob.wkey}</div>
+        <div className="muted small">
+          Daily refresh (UTC): {blob.dkey} • Weekly: {blob.wkey}
+        </div>
       </div>
 
       {/* Daily Quests */}
@@ -188,7 +183,12 @@ export default function QuestsPanel() {
         </div>
         <div className="grid">
           {blob.dailies.map((q) => (
-            <QuestCard key={q.id} q={q} onBump={() => bump(q.id, "daily")} onClaim={() => claim(q.id, "daily")} />
+            <QuestCard
+              key={q.id}
+              q={q}
+              onBump={() => bump(q.id, "daily")}
+              onClaim={() => claim(q.id, "daily")}
+            />
           ))}
         </div>
       </section>
@@ -203,7 +203,12 @@ export default function QuestsPanel() {
         </div>
         <div className="grid">
           {blob.weeklies.map((q) => (
-            <QuestCard key={q.id} q={q} onBump={() => bump(q.id, "weekly")} onClaim={() => claim(q.id, "weekly")} />
+            <QuestCard
+              key={q.id}
+              q={q}
+              onBump={() => bump(q.id, "weekly")}
+              onClaim={() => claim(q.id, "weekly")}
+            />
           ))}
         </div>
       </section>
@@ -267,7 +272,15 @@ export default function QuestsPanel() {
   );
 }
 
-function QuestCard({ q, onBump, onClaim }: { q: Quest; onBump: () => void; onClaim: () => void }) {
+function QuestCard({
+  q,
+  onBump,
+  onClaim,
+}: {
+  q: Quest;
+  onBump: () => void;
+  onClaim: () => void;
+}) {
   const pct = Math.round((q.progress / q.target) * 100);
   return (
     <div className="card">
@@ -277,11 +290,21 @@ function QuestCard({ q, onBump, onClaim }: { q: Quest; onBump: () => void; onCla
       </div>
 
       <div className="row">
-        <div className="muted small">Reward: <strong className="ok">+{q.rewardCoins}c</strong></div>
-        <div className="muted small">{q.progress}/{q.target}</div>
+        <div className="muted small">
+          Reward: <strong className="ok">+{q.rewardCoins}c</strong>
+        </div>
+        <div className="muted small">
+          {q.progress}/{q.target}
+        </div>
       </div>
 
-      <div className="track" role="progressbar" aria-valuemin={0} aria-valuemax={q.target} aria-valuenow={q.progress}>
+      <div
+        className="track"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={q.target}
+        aria-valuenow={q.progress}
+      >
         <div className="fill" style={{ width: `${pct}%` }} />
       </div>
 
@@ -291,9 +314,13 @@ function QuestCard({ q, onBump, onClaim }: { q: Quest; onBump: () => void; onCla
             Mark +1
           </button>
         ) : q.claimed ? (
-          <button className="ghost" disabled>Claimed</button>
+          <button className="ghost" disabled>
+            Claimed
+          </button>
         ) : (
-          <button className="primary" onClick={onClaim}>Claim</button>
+          <button className="primary" onClick={onClaim}>
+            Claim
+          </button>
         )}
       </div>
     </div>
