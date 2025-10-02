@@ -3,6 +3,8 @@ import React from "react";
 import { useInventory, StoreItem } from "../../state/inventory";
 import { useWallet, COIN_SKUS, type CoinSkuId } from "../../state/wallet";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL; // e.g., https://your-api.onrender.com
+
 function BalanceBar() {
   const coins = useWallet((s) => s.coins);
   const format = useWallet((s) => s.format);
@@ -24,23 +26,26 @@ function BalanceBar() {
 }
 
 function BuyCoins() {
-  const grantSku = useWallet((s) => s.grantSku);
-
-  // In production: call your server to create a Stripe Checkout session, then redirect.
-  // For dev/MVP we immediately grant coins after a confirm() to mimic success.
-  async function startCheckoutMock(sku: CoinSkuId) {
-    const def = COIN_SKUS[sku];
-    const ok = window.confirm(
-      `Dev purchase:\n\n${def.label} for $${def.priceUsd.toFixed(2)}\n\nAdd coins now?`
-    );
-    if (ok) {
-      grantSku(sku);
-      alert(`✅ Added ${def.coins.toLocaleString()} coins.`);
+  async function startCheckout(sku: CoinSkuId) {
+    try {
+      if (!API_BASE) throw new Error("VITE_API_BASE_URL not set");
+      const resp = await fetch(`${API_BASE}/api/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // TODO: pass your real logged-in user id if you have auth
+        body: JSON.stringify({ sku, userId: "anon" }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || "Checkout failed");
+      if (!data?.url) throw new Error("No checkout URL returned");
+      window.location.href = data.url; // Redirect to Stripe Checkout
+    } catch (e: any) {
+      alert(e.message || "Checkout failed");
     }
   }
 
   return (
-    <div className="buyc">
+    <div className="buyc" id="buy-coins">
       <div className="buyc-head">
         <h4 style={{ margin: 0 }}>Buy Coins</h4>
         <p className="muted small" style={{ margin: 0 }}>
@@ -57,10 +62,13 @@ function BuyCoins() {
                 <div className="sku-emoji">🪙</div>
                 <div className="sku-meta">
                   <div className="sku-name">{def.label}</div>
-                  <div className="sku-sub">${def.priceUsd.toFixed(2)}</div>
+                  <div className="sku-sub">
+                    {/* Price is shown for UX; actual amount is defined by your Stripe Price on the server */}
+                    ${def.priceUsd.toFixed(2)}
+                  </div>
                 </div>
               </div>
-              <button className="primary w100" onClick={() => startCheckoutMock(id)}>
+              <button className="primary w100" onClick={() => startCheckout(id)}>
                 Get Coins
               </button>
             </div>
@@ -81,6 +89,13 @@ function BuyCoins() {
         .sku-emoji{ font-size:22px; }
         .sku-name{ font-weight:700; color:#e6edf7; }
         .sku-sub{ font-size:12px; color:#9fb0c7; }
+        .primary{
+          background:#2563eb; border:none; color:white; padding:10px 12px;
+          border-radius:10px; cursor:pointer;
+        }
+        .w100{ width:100%; }
+        .muted{ color:#9fb0c7; }
+        .small{ font-size:12px; }
       `}</style>
     </div>
   );
@@ -102,13 +117,11 @@ function ItemCard({ item }: { item: StoreItem }) {
   async function onBuy() {
     const res = buy(item.id);
     if (!res.ok) {
-      // If wallet is the blocker, nudge to top-up
       if (!canAfford) {
         const goTopUp = window.confirm(
           `You need ${item.price.toLocaleString()} coins but only have ${wallet.format()}.\n\nBuy more coins now?`
         );
         if (goTopUp) {
-          // Smooth scroll to Buy Coins section
           const node = document.getElementById("buy-coins");
           if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
         }
@@ -176,9 +189,7 @@ export default function StorePanel() {
     <div className="store">
       <h3>Store</h3>
       <BalanceBar />
-      <div id="buy-coins">
-        <BuyCoins />
-      </div>
+      <BuyCoins />
 
       <p className="muted small" style={{ marginTop: 6 }}>Cosmetics only • Coins only</p>
 
@@ -191,13 +202,6 @@ export default function StorePanel() {
       <style>{`
         .store{ display:flex; flex-direction:column; gap:12px; }
         .grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
-        .muted{ color:#9fb0c7; }
-        .small{ font-size:12px; }
-        .primary{
-          background:#2563eb; border:none; color:white; padding:10px 12px;
-          border-radius:10px; cursor:pointer;
-        }
-        .w100{ width:100%; }
       `}</style>
     </div>
   );
