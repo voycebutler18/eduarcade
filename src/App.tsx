@@ -11,6 +11,7 @@ import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
 import BuildWorlds from "./features/build/BuildWorlds";
 import ChatPanel from "./features/chat/ChatPanel";
 import DailySpin from "./features/rewards/DailySpin";
+import QuestsPanel from "./features/quests/QuestsPanel";
 
 /** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
@@ -149,6 +150,9 @@ export default function App() {
                     : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
                 </p>
               </div>
+
+              {/* Quests (Daily/Weekly) */}
+              <QuestsPanel />
 
               {/* School Mode toggle */}
               <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
