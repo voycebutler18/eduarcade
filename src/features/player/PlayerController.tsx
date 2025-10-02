@@ -1,3 +1,4 @@
+// src/features/player/PlayerController.tsx
 import { useEffect, useRef, useState } from "react";
 import { Collider } from "../campus/OutdoorWorld3D";
 
@@ -6,7 +7,7 @@ import { Collider } from "../campus/OutdoorWorld3D";
  * - WASD / Arrow keys
  * - Constant speed
  * - Collides against Box/Circle colliders
- * - Renders a simple disk for the player (replace later with your avatar rig)
+ * - Renders children (your avatar) at the player position
  */
 
 type Vec2 = { x: number; z: number };
@@ -17,14 +18,17 @@ export default function PlayerController({
   radius = 0.45,
   colliders = [],
   onMove,
+  children,
 }: {
   start?: Vec2;
   speed?: number;     // meters per second
   radius?: number;    // player radius for collision
   colliders?: Collider[];
   onMove?: (pos: Vec2) => void;
+  children?: React.ReactNode; // <<— render avatar here
 }) {
   const [pos, setPos] = useState<Vec2>(start);
+  const [heading, setHeading] = useState(0); // radians, rotate to face movement
   const keys = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -75,21 +79,28 @@ export default function PlayerController({
           setPos(np);
           onMove?.(np);
         }
+
+        // face the direction of motion (atan2 on X/Z)
+        const ang = Math.atan2(vx, -vz); // -vz because -Z is "forward" in our top-down
+        setHeading(ang);
       }
 
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos, speed, radius, colliders, onMove]);
 
   return (
-    <group position={[pos.x, 0, pos.z]}>
-      {/* simple capsule/disk placeholder */}
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <cylinderGeometry args={[radius, radius, 0.9, 12]} />
-        <meshStandardMaterial color="#60a5fa" />
-      </mesh>
+    <group position={[pos.x, 0, pos.z]} rotation={[0, heading, 0]}>
+      {children ?? (
+        // fallback capsule if no children passed
+        <mesh position={[0, 0.45, 0]} castShadow>
+          <cylinderGeometry args={[radius, radius, 0.9, 12]} />
+          <meshStandardMaterial color="#60a5fa" />
+        </mesh>
+      )}
     </group>
   );
 }
