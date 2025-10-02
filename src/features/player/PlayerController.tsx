@@ -1,16 +1,25 @@
 // src/features/player/PlayerController.tsx
 import { useEffect, useRef, useState } from "react";
-import { Collider } from "../campus/OutdoorWorld3D";
+import { type Collider } from "../campus/OutdoorWorld3D";
 
 /**
  * Top-down 2D controller on XZ plane.
  * - WASD / Arrow keys
  * - Constant speed
  * - Collides against Box/Circle colliders
- * - Renders children (your avatar) at the player position
+ * - Renders your avatar (children) at the player position
  */
 
 type Vec2 = { x: number; z: number };
+
+type Props = {
+  start?: Vec2;
+  speed?: number;      // meters per second
+  radius?: number;     // player radius for collision
+  colliders?: Collider[];
+  onMove?: (pos: Vec2) => void;
+  children?: React.ReactNode; // render your HeroRig3D here
+};
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
@@ -19,85 +28,102 @@ export default function PlayerController({
   colliders = [],
   onMove,
   children,
-}: {
-  start?: Vec2;
-  speed?: number;     // meters per second
-  radius?: number;    // player radius for collision
-  colliders?: Collider[];
-  onMove?: (pos: Vec2) => void;
-  children?: React.ReactNode; // <<— render avatar here
-}) {
-  const [pos, setPos] = useState<Vec2>(start);
-  const [heading, setHeading] = useState(0); // radians, rotate to face movement
-  const keys = useRef<Record<string, boolean>>({});
+}: Props) {
+  // Render state (only updated when position actually changes)
+  const [renderPos, setRenderPos] = useState<Vec2>(start);
 
+  // Internal refs so we keep a single, stable RAF loop
+  const posRef = useRef<Vec2>(start);
+  const keysRef = useRef<Record<string, boolean>>({});
+  const collidersRef = useRef<Collider[]>(colliders);
+  collidersRef.current = colliders;
+
+  // Key handling (prevent page scroll on Arrow keys)
   useEffect(() => {
-    const down = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = true);
-    const up = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = false);
-    window.addEventListener("keydown", down);
+    const down = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (
+        k === "arrowup" ||
+        k === "arrowdown" ||
+        k === "arrowleft" ||
+        k === "arrowright" ||
+        k === " "
+      ) {
+        e.preventDefault();
+      }
+      keysRef.current[k] = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      keysRef.current[e.key.toLowerCase()] = false;
+    };
+    window.addEventListener("keydown", down, { passive: false });
     window.addEventListener("keyup", up);
     return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
+      window.removeEventListener("keydown", down as any);
+      window.removeEventListener("keyup", up as any);
     };
   }, []);
 
+  // Single RAF loop
   useEffect(() => {
     let last = performance.now();
     let raf = 0;
+
     const tick = () => {
       const now = performance.now();
       const dt = (now - last) / 1000;
       last = now;
 
-      let vx = 0, vz = 0;
-      if (keys.current["w"] || keys.current["arrowup"]) vz -= 1;
-      if (keys.current["s"] || keys.current["arrowdown"]) vz += 1;
-      if (keys.current["a"] || keys.current["arrowleft"]) vx -= 1;
-      if (keys.current["d"] || keys.current["arrowright"]) vx += 1;
+      let vx = 0,
+        vz = 0;
+      const keys = keysRef.current;
 
-      if (vx || vz) {
+      if (keys["w"] || keys["arrowup"]) vz -= 1;
+      if (keys["s"] || keys["arrowdown"]) vz += 1;
+      if (keys["a"] || keys["arrowleft"]) vx -= 1;
+      if (keys["d"] || keys["arrowright"]) vx += 1;
+
+      if (vx !== 0 || vz !== 0) {
         const mag = Math.hypot(vx, vz) || 1;
         vx = (vx / mag) * speed * dt;
         vz = (vz / mag) * speed * dt;
 
-        // try move X, then Z with collision
-        let nx = pos.x + vx;
-        let nz = pos.z;
+        const p = posRef.current;
+        let nx = p.x + vx;
+        let nz = p.z;
 
-        if (intersects({ x: nx, z: nz }, radius, colliders)) {
-          nx = pos.x; // cancel X
+        // collide X
+        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) {
+          nx = p.x;
         }
-        // second axis
-        nz = pos.z + vz;
-        if (intersects({ x: nx, z: nz }, radius, colliders)) {
-          nz = pos.z; // cancel Z
+        // then Z
+        nz = p.z + vz;
+        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) {
+          nz = p.z;
         }
 
-        if (nx !== pos.x || nz !== pos.z) {
+        if (nx !== p.x || nz !== p.z) {
           const np = { x: nx, z: nz };
-          setPos(np);
+          posRef.current = np;
+          setRenderPos(np);
           onMove?.(np);
         }
-
-        // face the direction of motion (atan2 on X/Z)
-        const ang = Math.atan2(vx, -vz); // -vz because -Z is "forward" in our top-down
-        setHeading(ang);
       }
 
       raf = requestAnimationFrame(tick);
     };
+
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos, speed, radius, colliders, onMove]);
+  }, [onMove, radius, speed]);
 
   return (
-    <group position={[pos.x, 0, pos.z]} rotation={[0, heading, 0]}>
+    <group position={[renderPos.x, 0, renderPos.z]}>
+      {/* If you pass your avatar as children, it renders here.
+          Otherwise show a small fallback capsule. */}
       {children ?? (
-        // fallback capsule if no children passed
         <mesh position={[0, 0.45, 0]} castShadow>
-          <cylinderGeometry args={[radius, radius, 0.9, 12]} />
+          <cylinderGeometry args={[radius, radius, 0.9, 16]} />
           <meshStandardMaterial color="#60a5fa" />
         </mesh>
       )}
@@ -117,7 +143,6 @@ function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
       // box: axis-aligned
       const hw = c.w / 2;
       const hd = c.d / 2;
-      // clamp point to box
       const cx = clamp(p.x, c.x - hw, c.x + hw);
       const cz = clamp(p.z, c.z - hd, c.z + hd);
       const dx = p.x - cx;
