@@ -1,15 +1,13 @@
-// src/features/avatar/AvatarStudio.tsx
-import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, ContactShadows, Sky } from "@react-three/drei";
+import React from "react";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Sky, ContactShadows } from "@react-three/drei";
 import HeroRig3D from "./HeroRig3D";
 import { useAvatar, AvatarPreset } from "../../state/avatar";
 import { useInventory } from "../../state/inventory";
 
-type Props = { open: boolean; onClose: () => void };
-
-type ViewMode = "FULL" | "HEAD_FRONT" | "HEAD_LEFT" | "HEAD_RIGHT" | "HEAD_BACK";
+/* ------------ constants ------------ */
+type ViewKey = "Full" | "Front" | "Left" | "Right" | "Back";
 
 const SKINS: AvatarPreset["skin"][] = ["Very Light", "Light", "Tan", "Deep", "Rich"];
 const BODIES: AvatarPreset["body"][] = ["Slim", "Standard", "Athletic"];
@@ -17,96 +15,137 @@ const HAIRS: AvatarPreset["hair"][] = ["Short", "Ponytail", "Curly", "Buzz"];
 const EYES: AvatarPreset["eyes"][] = ["Round", "Sharp", "Happy"];
 const EXPRS: AvatarPreset["expr"][] = ["Neutral", "Smile", "Wow", "Determined"];
 
+const VIEW: Record<ViewKey, THREE.Vector3> = {
+  Full:  new THREE.Vector3(3.4, 2.2, 3.4),
+  Front: new THREE.Vector3(0.0, 1.25, 1.35),
+  Left:  new THREE.VectorVector3(-1.35, 1.15, 0.0),
+  Right: new THREE.Vector3( 1.35, 1.15, 0.0),
+  Back:  new THREE.Vector3(0.0, 1.25, -1.35),
+};
+
+/* camera tweener (inside Canvas) */
+function CameraRig({ to }: { to: THREE.Vector3 }) {
+  const { camera } = useThree();
+  const look = React.useMemo(() => new THREE.Vector3(0, 1.0, 0), []);
+  useFrame(() => {
+    camera.position.lerp(to, 0.12);
+    const pcam = camera as THREE.PerspectiveCamera;
+    pcam.fov = THREE.MathUtils.lerp(pcam.fov, to.equals(VIEW.Full) ? 55 : 40, 0.12);
+    camera.lookAt(look);
+    pcam.updateProjectionMatrix();
+  });
+  return null;
+}
+
+/* ------------ main ------------ */
+type Props = { open: boolean; onClose: () => void };
+
 export default function AvatarStudio({ open, onClose }: Props) {
-  if (!open) return null;
+  const { preset, setPreset } = useAvatar((s) => ({ preset: s.preset, setPreset: s.setPreset }));
+  const { isOwned } = useInventory((s) => ({ isOwned: s.isOwned }));
 
-  const { preset, setPreset } = useAvatar();
-  const inv = useInventory();
+  const [work, setWork] = React.useState<AvatarPreset>(() =>
+    preset ?? {
+      skin: "Light",
+      body: "Standard",
+      hair: "Short",
+      eyes: "Round",
+      expr: "Neutral",
+      outfitId: "outfit_runner",
+    }
+  );
+  React.useEffect(() => { if (open) setWork(preset ?? work); /* eslint-disable-next-line */ }, [open]);
 
-  const [draft, setDraft] = useState<AvatarPreset>({ ...preset });
-  const [view, setView] = useState<ViewMode>("FULL");
+  const [view, setView] = React.useState<ViewKey>("Front");
 
-  function choose<K extends keyof AvatarPreset>(key: K, val: AvatarPreset[K]) {
-    setDraft((d) => ({ ...d, [key]: val }));
-  }
   function save() {
-    setPreset(draft);
+    const okOutfit =
+      !work.outfitId ? true :
+      work.outfitId === "outfit_runner" || isOwned(work.outfitId);
+    setPreset({ ...work, outfitId: okOutfit ? work.outfitId : undefined });
     onClose();
   }
 
-  // outfits
-  const ownRunner = inv.isOwned?.("outfit_runner") ?? true;   // starter
-  const ownAstro  = inv.isOwned?.("outfit_astro")  ?? false;  // buy in Store
-
-  // when editing face details, auto zoom to head
-  const focusHead = () => setView("HEAD_FRONT");
+  if (!open) return null;
 
   return (
-    <div className="studio-overlay" role="dialog" aria-modal="true">
+    <div className="studio-overlay">
       <div className="studio">
-        <div className="title">Create-Your-Hero</div>
+        <div className="studio-title">Create-Your-Hero</div>
 
-        <div className="content">
-          {/* LEFT: 3D preview */}
-          <div className="preview">
-            <StudioPreview preset={draft} view={view} />
+        <div className="studio-main">
+          {/* Viewer */}
+          <div className="viewer">
+            <Canvas
+              shadows
+              camera={{ position: VIEW[view].toArray(), fov: 40 }}
+              gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+            >
+              <ambientLight intensity={0.55} />
+              <directionalLight position={[5,8,5]} intensity={1.25} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
+              <Sky sunPosition={[100,20,100]} />
+              <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
+                <planeGeometry args={[40,40]} />
+                <meshStandardMaterial color="#cfd7df" roughness={0.95} />
+              </mesh>
+              <ContactShadows position={[0,0.01,0]} opacity={0.45} scale={12} blur={2.4} far={8} />
+
+              <group position={[0,0,0]}>
+                <HeroRig3D preset={work} />
+              </group>
+
+              <CameraRig to={VIEW[view]} />
+            </Canvas>
+
             <div className="viewbar">
-              <button className={"pill" + (view === "FULL" ? " active" : "")} onClick={() => setView("FULL")}>Full</button>
-              <button className={"pill" + (view === "HEAD_FRONT" ? " active" : "")} onClick={() => setView("HEAD_FRONT")}>Front</button>
-              <button className={"pill" + (view === "HEAD_LEFT" ? " active" : "")} onClick={() => setView("HEAD_LEFT")}>Left</button>
-              <button className={"pill" + (view === "HEAD_RIGHT" ? " active" : "")} onClick={() => setView("HEAD_RIGHT")}>Right</button>
-              <button className={"pill" + (view === "HEAD_BACK" ? " active" : "")} onClick={() => setView("HEAD_BACK")}>Back</button>
+              {(["Full","Front","Left","Right","Back"] as ViewKey[]).map(k => (
+                <button key={k} className={view===k?"pill active":"pill"} onClick={()=>setView(k)}>{k}</button>
+              ))}
             </div>
           </div>
 
-          {/* RIGHT: controls */}
-          <div className="panel">
+          {/* Controls */}
+          <div className="controls">
             <Section title="Body">
-              <PillRow options={BODIES} value={draft.body} onSelect={(v) => choose("body", v)} />
+              <PillRow options={BODIES} value={work.body} onSelect={v=>setWork({...work, body:v})}/>
             </Section>
 
             <Section title="Skin tone">
               <div className="swatches">
-                {SKINS.map((s) => (
-                  <button
-                    key={s}
-                    className={"swatch" + (draft.skin === s ? " active" : "")}
-                    onClick={() => choose("skin", s)}
-                    style={{ background: skinHex(s) }}
-                    title={s}
-                  />
+                {SKINS.map(s=>(
+                  <button key={s}
+                          className={work.skin===s?"swatch active":"swatch"}
+                          style={{background:skinHex(s)}}
+                          onClick={()=>setWork({...work, skin:s})}
+                          aria-label={s}/>
                 ))}
               </div>
             </Section>
 
             <Section title="Hair">
-              <PillRow options={HAIRS} value={draft.hair} onSelect={(v) => { choose("hair", v); focusHead(); }} />
+              <PillRow options={HAIRS} value={work.hair} onSelect={v=>setWork({...work, hair:v})}/>
             </Section>
 
             <Section title="Eyes">
-              <PillRow options={EYES} value={draft.eyes} onSelect={(v) => { choose("eyes", v); focusHead(); }} />
+              <PillRow options={EYES} value={work.eyes} onSelect={v=>setWork({...work, eyes:v})}/>
             </Section>
 
             <Section title="Expression">
-              <PillRow options={EXPRS} value={draft.expr} onSelect={(v) => { choose("expr", v); focusHead(); }} />
+              <PillRow options={EXPRS} value={work.expr} onSelect={v=>setWork({...work, expr:v})}/>
             </Section>
 
             <Section title="Outfit (cosmetic)">
               <div className="outfits">
-                <OutfitCard
-                  title="Runner Set"
-                  owned={ownRunner}
-                  active={draft.outfitId === "outfit_runner"}
-                  onClick={() => ownRunner ? choose("outfitId", "outfit_runner") : alert("Locked")}
-                  swatch="#1f3e76"
-                />
-                <OutfitCard
-                  title="Astro Set"
-                  owned={ownAstro}
-                  active={draft.outfitId === "outfit_astro"}
-                  onClick={() => ownAstro ? choose("outfitId", "outfit_astro") : alert("Buy in Store")}
-                  swatch="#2a9dad"
-                />
+                <OutfitCard title="Runner Set"
+                            owned={true}
+                            active={work.outfitId==="outfit_runner"}
+                            onClick={()=>setWork({...work, outfitId:"outfit_runner"})}
+                            swatch="#1e3a8a"/>
+                <OutfitCard title="Astro Set"
+                            owned={false}
+                            active={work.outfitId==="outfit_astro"}
+                            onClick={()=>setWork({...work, outfitId:"outfit_astro"})}
+                            swatch="#21a6b6"/>
               </div>
             </Section>
 
@@ -117,7 +156,7 @@ export default function AvatarStudio({ open, onClose }: Props) {
           </div>
         </div>
 
-        <button className="close" onClick={onClose} aria-label="Close">×</button>
+        <button className="close" onClick={onClose} aria-label="Close">✕</button>
       </div>
 
       <style>{STYLES}</style>
@@ -125,139 +164,32 @@ export default function AvatarStudio({ open, onClose }: Props) {
   );
 }
 
-/* ---------- Canvas preview with camera rig ---------- */
-
-function StudioPreview({ preset, view }: { preset: AvatarPreset; view: ViewMode }) {
-  const controlsRef = useRef<any>(null);
-  return (
-    <>
-      <Canvas shadows camera={{ position: [2.6, 2.1, 2.6], fov: 55 }} gl={{ antialias: true }}>
-        <ambientLight intensity={0.55} />
-        <directionalLight
-          position={[5, 8, 5]}
-          intensity={1.2}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-        />
-        <Sky sunPosition={[100, 20, 100]} />
-
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color={"#b7c0c9"} roughness={0.96} />
-        </mesh>
-        <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.0} far={8} />
-
-        <group position={[0, 0, 0]}>
-          <HeroRig3D preset={preset} />
-        </group>
-
-        <OrbitControls ref={controlsRef} enablePan={false} />
-        <CameraRig mode={view} controls={controlsRef} />
-      </Canvas>
-    </>
-  );
+/* UI bits */
+function Section({ title, children }: { title:string; children:React.ReactNode }) {
+  return <div className="section"><div className="section-title">{title}</div>{children}</div>;
 }
-
-function CameraRig({ mode, controls }: { mode: ViewMode; controls: React.RefObject<any> }) {
-  const { camera } = useThree();
-  const goalPos = useRef(new THREE.Vector3());
-  const goalTarget = useRef(new THREE.Vector3());
-  const currentTarget = useRef(new THREE.Vector3(0, 0.9, 0));
-  const animating = useRef(false);
-
-  // set new goals on mode change
-  useEffect(() => {
-    switch (mode) {
-      case "FULL":
-        goalPos.current.set(2.6, 2.1, 2.6);
-        goalTarget.current.set(0, 0.9, 0);
-        break;
-      case "HEAD_FRONT":
-        goalPos.current.set(0.55, 1.3, 0.9);
-        goalTarget.current.set(0, 1.02, 0.26);
-        break;
-      case "HEAD_LEFT":
-        goalPos.current.set(-0.9, 1.25, 0.55);
-        goalTarget.current.set(0, 1.02, 0.1);
-        break;
-      case "HEAD_RIGHT":
-        goalPos.current.set(0.9, 1.25, 0.55);
-        goalTarget.current.set(0, 1.02, 0.1);
-        break;
-      case "HEAD_BACK":
-        goalPos.current.set(0, 1.2, -0.9);
-        goalTarget.current.set(0, 1.02, 0.0);
-        break;
-    }
-    animating.current = true;
-  }, [mode]);
-
-  useFrame(() => {
-    // smooth towards goals; stop when close
-    const posDone = camera.position.distanceTo(goalPos.current) < 0.01;
-    const tgtDone = currentTarget.current.distanceTo(goalTarget.current) < 0.01;
-
-    if (animating.current) {
-      camera.position.lerp(goalPos.current, 0.12);
-      currentTarget.current.lerp(goalTarget.current, 0.12);
-      const c = controls.current;
-      if (c) {
-        c.target.copy(currentTarget.current);
-        c.update();
-      }
-      if (posDone && tgtDone) animating.current = false;
-    }
-  });
-
-  return null;
+function PillRow<T extends string>({ options, value, onSelect }:{
+  options: readonly T[]; value: T|undefined; onSelect:(v:T)=>void;
+}){
+  return <div className="pills">
+    {options.map(o=><button key={o} className={value===o?"pill active":"pill"} onClick={()=>onSelect(o)}>{o}</button>)}
+  </div>;
 }
-
-/* ---------- UI bits ---------- */
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function OutfitCard({ title, owned, active, onClick, swatch }:{
+  title:string; owned:boolean; active:boolean; onClick:()=>void; swatch:string;
+}){
   return (
-    <div className="section">
-      <div className="section-title">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function PillRow<T extends string>({
-  options, value, onSelect,
-}: { options: readonly T[]; value: T | undefined; onSelect: (v: T) => void }) {
-  return (
-    <div className="row">
-      {options.map((opt) => (
-        <button
-          key={opt}
-          className={"pill" + (value === opt ? " active" : "")}
-          onClick={() => onSelect(opt)}
-        >
-          {opt}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function OutfitCard({
-  title, owned, active, onClick, swatch,
-}: { title: string; owned: boolean; active: boolean; onClick: () => void; swatch: string }) {
-  return (
-    <button className={"outfit" + (active ? " active" : "")} onClick={onClick}>
-      <div className="chip" style={{ background: swatch }} />
-      <div className="label">
-        <div className="name">{title}</div>
-        <div className="muted">{owned ? "Owned" : "Locked"}</div>
+    <button className={active?"outfit active":"outfit"} onClick={onClick} disabled={!owned}>
+      <span className="dot" style={{background:swatch}}/>
+      <div className="oflex">
+        <div className="oname">{title}</div>
+        <div className="oown">{owned ? (active ? "Equipped" : "Owned") : "Locked"}</div>
       </div>
     </button>
   );
 }
 
-/* ---------- helpers ---------- */
-
+/* helpers */
 function skinHex(s?: AvatarPreset["skin"]) {
   switch (s) {
     case "Very Light": return "#f6d7c3";
@@ -269,36 +201,34 @@ function skinHex(s?: AvatarPreset["skin"]) {
   }
 }
 
-/* ---------- styles ---------- */
-
+/* styles */
 const STYLES = `
 .studio-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
-.studio{position:relative;width:min(1100px,95vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
-.title{font-size:20px;font-weight:800}
-.content{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
-.preview{position:relative;height:460px;background:#0e162a;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
-.viewbar{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;flex-wrap:wrap;background:rgba(2,6,23,.45);padding:6px;border-radius:10px;border:1px solid rgba(255,255,255,.12)}
-.panel{display:flex;flex-direction:column;gap:14px}
-.section{display:flex;flex-direction:column;gap:8px}
-.section-title{font-weight:700}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.pill{background:transparent;border:1px solid rgba(255,255,255,.12);color:#e6edf7;border-radius:999px;padding:8px 12px;cursor:pointer}
-.pill.active{background:#1e293b;border-color:#3b82f6}
+.studio{position:relative;width:min(1200px,96vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
+.studio-title{font-size:22px;font-weight:800}
+.studio-main{display:grid;grid-template-columns: 1.1fr 0.9fr;gap:14px}
+.viewer{position:relative;aspect-ratio:16/12;background:#0c1426;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+.viewbar{position:absolute;left:12px;bottom:12px;display:flex;gap:8px}
+.controls{display:flex;flex-direction:column;gap:12px;max-height:72vh;overflow:auto;padding-right:6px}
+.section{background:#0c1426;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px}
+.section-title{font-weight:800;margin-bottom:8px}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{background:transparent;border:1px solid rgba(255,255,255,.16);color:#e6edf7;border-radius:999px;padding:8px 12px;cursor:pointer}
+.pill.active{background:#1941b6;border-color:#4f73ff}
 .swatches{display:flex;gap:8px}
-.swatch{width:26px;height:26px;border-radius:999px;border:2px solid rgba(255,255,255,.25);cursor:pointer}
-.swatch.active{outline:2px solid #3b82f6}
+.swatch{width:28px;height:28px;border-radius:999px;border:2px solid transparent}
+.swatch.active{border-color:#4f73ff}
 .outfits{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.outfit{display:flex;gap:10px;align-items:center;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px;cursor:pointer;text-align:left}
-.outfit.active{border-color:#3b82f6;background:rgba(59,130,246,.08)}
-.chip{width:36px;height:36px;border-radius:8px}
-.label .name{font-weight:700}
-.muted{color:#9fb0c7;font-size:12px}
-.actions{display:flex;gap:8px;justify-content:flex-end}
-.primary{background:#2563eb;color:white;border:none;border-radius:10px;padding:8px 14px;cursor:pointer}
-.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e6edf7;border-radius:10px;padding:8px 14px;cursor:pointer}
-.close{position:absolute;top:6px;right:10px;border:none;background:transparent;color:#9fb0c7;font-size:20px;cursor:pointer}
-@media (max-width: 900px){
-  .content{grid-template-columns:1fr;gap:10px}
-  .preview{height:380px}
-}
+.outfit{display:flex;gap:10px;align-items:center;justify-content:flex-start;background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;cursor:pointer}
+.outfit.active{outline:2px solid #4f73ff}
+.outfit:disabled{opacity:.55;cursor:not-allowed}
+.dot{width:34px;height:34px;border-radius:8px}
+.oflex{display:flex;flex-direction:column;gap:2px}
+.oname{font-weight:800}
+.oown{font-size:12px;color:#9fb0c7}
+.actions{display:flex;justify-content:flex-end;gap:8px}
+.primary{background:#2563eb;border:none;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
+.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e6edf7;border-radius:10px;padding:10px 14px;cursor:pointer}
+.close{position:absolute;right:10px;top:8px;background:transparent;color:#9fb0c7;border:none;font-size:18px;cursor:pointer}
+@media (max-width: 980px){ .studio-main{grid-template-columns: 1fr} }
 `;
