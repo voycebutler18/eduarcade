@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSchedule } from "../../state/schedule";
 
 /**
  * Local-only quiz gate for MVP:
  * - Lets player pick Grade + Subject
  * - Generates 5 questions from a tiny bank
- * - Requires 3/5 correct to pass
- * - Reports result via onClose({ passed, grade, subject })
+ * - Requires 5/5 correct to pass and unlock Build for the period
+ * - Reports result via onClose({ passed, grade, subject, correctCount })
  */
 
 type Subject =
@@ -61,6 +62,9 @@ export function QuizGate({
   const [answers, setAnswers] = useState<number[]>([]);
   const [showHint, setShowHint] = useState(false);
 
+  // NEW: schedule action
+  const { markFivePassed } = useSchedule();
+
   // Reset when dialog opens/closes
   useEffect(() => {
     if (!open) {
@@ -101,7 +105,11 @@ export function QuizGate({
   }
 
   function finish() {
-    const passed = correctCount >= 3;
+    const passed = correctCount >= 5;
+    if (passed) {
+      // Unlock free build for the current period
+      markFivePassed();
+    }
     onClose({
       passed,
       grade,
@@ -171,7 +179,7 @@ export function QuizGate({
             </button>
 
             <p className="muted small">
-              Pass with <strong>3/5</strong> to queue. Hints give a nudge without full answers.
+              Pass with <strong>5/5</strong> to unlock building this period. Hints give a nudge without full answers.
             </p>
           </div>
         )}
@@ -212,7 +220,7 @@ export function QuizGate({
         {step === "result" && (
           <div className="eva-body">
             <h4 className="q">
-              {correctCount >= 3 ? "Nice! You’re cleared to queue." : "Almost there!"}
+              {correctCount >= 5 ? "Perfect! Free Build unlocked." : "Almost there—aim for 5/5."}
             </h4>
             <p className="muted">
               You got <strong>{correctCount}/5</strong> correct in {subject} •{" "}
@@ -332,8 +340,8 @@ function mathBank(grade: Grade): Question[] {
     {
       prompt: "What is 9 × 3?",
       choices: ["18", "21", "24", "27"],
-      answerIndex: 1,
-      hint: "Think 9 + 9 + 3.",
+      answerIndex: 3,
+      hint: "Think 9 + 9 + 9.",
     },
     {
       prompt: "Which is greater: 0.6 or 0.56?",
@@ -368,7 +376,7 @@ function mathBank(grade: Grade): Question[] {
     {
       prompt: "Slope of the line through (2, 3) and (6, 11)?",
       choices: ["2", "1", "1/2", "3"],
-      answerIndex: 0,
+      answerIndex: 2 === 2 ? 0 : 0, // keep simple; correct is 2
       hint: "m = (11−3)/(6−2).",
     },
     {
@@ -392,14 +400,8 @@ function mathBank(grade: Grade): Question[] {
 function readingBank(grade: Grade): Question[] {
   const pool = [
     {
-      prompt:
-        "Which sentence is written correctly?",
-      choices: [
-        "me and sam runs fast.",
-        "Sam and I run fast.",
-        "Sam and me run fast.",
-        "I and Sam runs fast.",
-      ],
+      prompt: "Which sentence is written correctly?",
+      choices: ["me and sam runs fast.", "Sam and I run fast.", "Sam and me run fast.", "I and Sam runs fast."],
       answerIndex: 1,
       hint: "Subject-verb agreement and pronoun order.",
     },
@@ -452,12 +454,7 @@ function socialBank(grade: Grade): Question[] {
   const pool = [
     {
       prompt: "A democracy is a system where:",
-      choices: [
-        "One ruler holds all power.",
-        "Citizens have a say in government.",
-        "Military controls everything.",
-        "Religious leaders govern.",
-      ],
+      choices: ["One ruler holds all power.", "Citizens have a say in government.", "Military controls everything.", "Religious leaders govern."],
       answerIndex: 1,
       hint: "Think: voting.",
     },
@@ -493,23 +490,13 @@ function testPrepBank(grade: Grade): Question[] {
   const pool = [
     {
       prompt: "Best strategy when stuck on a question?",
-      choices: [
-        "Spend all your time on it",
-        "Guess immediately",
-        "Eliminate wrong choices and move on",
-        "Skip the whole section",
-      ],
+      choices: ["Spend all your time on it", "Guess immediately", "Eliminate wrong choices and move on", "Skip the whole section"],
       answerIndex: 2,
       hint: "Time management and POE.",
     },
     {
       prompt: "Before reading a passage, you should first:",
-      choices: [
-        "Skim the questions",
-        "Read every word slowly",
-        "Look up every unknown word",
-        "Skip introductions",
-      ],
+      choices: ["Skim the questions", "Read every word slowly", "Look up every unknown word", "Skip introductions"],
       answerIndex: 0,
       hint: "Preview guides attention.",
     },
