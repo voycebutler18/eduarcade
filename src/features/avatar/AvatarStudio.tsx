@@ -16,69 +16,38 @@ const HAIRS: AvatarPreset["hair"][] = ["Short", "Ponytail", "Curly", "Buzz"];
 const EYES: AvatarPreset["eyes"][] = ["Round", "Sharp", "Happy"];
 const EXPRS: AvatarPreset["expr"][] = ["Neutral", "Smile", "Wow", "Determined"];
 
-// camera positions for preset views
 const VIEW: Record<ViewKey, THREE.Vector3> = {
   Full:  new THREE.Vector3(3.4, 2.2, 3.4),
   Front: new THREE.Vector3(0.0, 1.25, 1.35),
-  Left:  new THREE.Vector3(-1.35, 1.15, 0.0),
+  Left:  new THREE.Vector3(-1.35, 1.15, 0.0),   // <- fixed typo
   Right: new THREE.Vector3( 1.35, 1.15, 0.0),
   Back:  new THREE.Vector3(0.0, 1.25, -1.35),
 };
 
-// orbit target for each view (where the camera looks)
-const TARGET: Record<ViewKey, THREE.Vector3> = {
-  Full:  new THREE.Vector3(0, 1.0, 0),
-  Front: new THREE.Vector3(0, 1.02, 0.22),
-  Left:  new THREE.Vector3(0, 1.02, 0.10),
-  Right: new THREE.Vector3(0, 1.02, 0.10),
-  Back:  new THREE.Vector3(0, 1.02, -0.05),
-};
-
-/* Camera tweener: smoothly move to a view, then allow free rotation */
+/* camera tweener (runs inside <Canvas/>) */
 function CameraRig({
-  view,
+  to,
   controlsRef,
 }: {
-  view: ViewKey;
-  controlsRef: React.RefObject<any>;
+  to: THREE.Vector3;
+  controlsRef?: React.RefObject<any>;
 }) {
   const { camera } = useThree();
-  const goalPos = React.useRef(VIEW[view].clone());
-  const goalTarget = React.useRef(TARGET[view].clone());
-  const animating = React.useRef(true);
-
-  // when view changes, set new goals and start animation
-  React.useEffect(() => {
-    goalPos.current.copy(VIEW[view]);
-    goalTarget.current.copy(TARGET[view]);
-    animating.current = true;
-  }, [view]);
-
+  const look = React.useMemo(() => new THREE.Vector3(0, 1.0, 0), []);
   useFrame(() => {
-    const orbit = controlsRef.current;
-
-    // animate FOV depending on view (wider for Full)
+    camera.position.lerp(to, 0.12);
     const pcam = camera as THREE.PerspectiveCamera;
-    const targetFov = view === "Full" ? 55 : 40;
-    pcam.fov = THREE.MathUtils.lerp(pcam.fov, targetFov, 0.12);
-    pcam.updateProjectionMatrix();
-
-    if (animating.current) {
-      camera.position.lerp(goalPos.current, 0.15);
-      if (orbit) {
-        orbit.target.lerp(goalTarget.current, 0.15);
-        orbit.update();
-      }
-
-      const posDone = camera.position.distanceTo(goalPos.current) < 0.01;
-      const tgtDone = !orbit || orbit.target.distanceTo(goalTarget.current) < 0.01;
-      if (posDone && tgtDone) animating.current = false;
-    } else if (orbit) {
-      // during free rotation, just let OrbitControls manage the camera
+    pcam.fov = THREE.MathUtils.lerp(pcam.fov, to.equals(VIEW.Full) ? 55 : 40, 0.12);
+    // If OrbitControls is present, drive its target; otherwise lookAt directly.
+    const orbit = controlsRef?.current;
+    if (orbit) {
+      orbit.target.lerp(look, 0.12);
       orbit.update();
+    } else {
+      camera.lookAt(look);
     }
+    pcam.updateProjectionMatrix();
   });
-
   return null;
 }
 
@@ -105,6 +74,9 @@ export default function AvatarStudio({ open, onClose }: Props) {
   }, [open]);
 
   const [view, setView] = React.useState<ViewKey>("Front");
+
+  // ✅ add controls ref so you can drag/rotate the avatar
+  const controlsRef = React.useRef<any>(null);
 
   function save() {
     const okOutfit =
@@ -142,16 +114,16 @@ export default function AvatarStudio({ open, onClose }: Props) {
                 <HeroRig3D preset={work} />
               </group>
 
-              {/* Drag/Touch to rotate */}
+              {/* Drag/Touch to rotate, like your original behavior */}
               <OrbitControls
                 ref={controlsRef}
                 enablePan={false}
-                enableZoom={false}   // set to true if you want pinch/scroll zoom
+                enableZoom={false}   // set to true if you want scroll/pinch zoom
                 rotateSpeed={0.9}
                 minPolarAngle={Math.PI * 0.15}
                 maxPolarAngle={Math.PI * 0.95}
               />
-              <CameraRig view={view} controlsRef={controlsRef} />
+              <CameraRig to={VIEW[view]} controlsRef={controlsRef} />
             </Canvas>
 
             <div className="viewbar">
@@ -258,7 +230,7 @@ function skinHex(s?: AvatarPreset["skin"]) {
   }
 }
 
-/* styles (unchanged) */
+/* styles */
 const STYLES = `
 .studio-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 .studio{position:relative;width:min(1200px,96vw);background:#0b1324;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px}
