@@ -1,3 +1,4 @@
+// src/App.tsx
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
@@ -7,15 +8,16 @@ import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
 import ProfileBar from "./features/profile/ProfileBar";
 import { useAge, useUsername } from "./state/profile";
 import StorePanel from "./features/store/StorePanel";
-import AvatarStudio, { AvatarPreset } from "./features/avatar/AvatarStudio";
+import AvatarStudio from "./features/avatar/AvatarStudio";
 import BuildWorlds from "./features/build/BuildWorlds";
 import ChatPanel from "./features/chat/ChatPanel";
 import DailySpin from "./features/rewards/DailySpin";
 import QuestsPanel from "./features/quests/QuestsPanel";
 import ProgressCard from "./features/progress/ProgressCard";
 import HeroRig3D from "./features/avatar/HeroRig3D";
+import { useAvatar } from "./state/avatar";
 
-/** ---------------- Hash “routes” (deep-linkable tabs) ---------------- */
+/* ---------------- Hash routes (tabs) ---------------- */
 type Tab = "play" | "build" | "avatar" | "store";
 const TAB_HASH: Record<Tab, `#/${Tab}`> = {
   play: "#/play",
@@ -28,16 +30,11 @@ function hashToTab(hash: string): Tab {
   return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
 }
 
-/** ---------------- Fallback spinning block (kept because you liked it) ---------------- */
+/* ---------------- Little spinning cube (kept for flair) ---------------- */
 function SpinningBlock() {
   const ref = useRef<THREE.Mesh>(null!);
   return (
-    <mesh
-      ref={ref}
-      rotation={[0.4, 0.6, 0]}
-      onPointerOver={() => (document.body.style.cursor = "pointer")}
-      onPointerOut={() => (document.body.style.cursor = "default")}
-    >
+    <mesh ref={ref} rotation={[0.4, 0.6, 0]}>
       <boxGeometry args={[1.4, 1.4, 1.4]} />
       <meshStandardMaterial metalness={0.2} roughness={0.4} />
     </mesh>
@@ -45,7 +42,7 @@ function SpinningBlock() {
 }
 
 export default function App() {
-  /** ---------------- Routing (tabs) ---------------- */
+  /* ---------------- Routing (tabs) ---------------- */
   const [tab, setTab] = useState<Tab>(() => hashToTab(window.location.hash || "#/play"));
   useEffect(() => {
     const onHash = () => setTab(hashToTab(window.location.hash || "#/play"));
@@ -58,16 +55,16 @@ export default function App() {
     setTab(next);
   }
 
-  /** ---------------- Quiz gate state ---------------- */
+  /* ---------------- Quiz gate state ---------------- */
   const [quizOpen, setQuizOpen] = useState(false);
   const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
   const cleared = lastQuiz?.passed ?? false;
 
-  /** ---------------- Profile data ---------------- */
+  /* ---------------- Profile data ---------------- */
   const age = useAge();
   const username = useUsername();
 
-  /** ---------------- Mock queue state (MVP) ---------------- */
+  /* ---------------- Mock queue (MVP) ---------------- */
   const [queueing, setQueueing] = useState(false);
   function mockQueue() {
     if (age == null) {
@@ -85,18 +82,11 @@ export default function App() {
     }, 1200);
   }
 
-  /** ---------------- Avatar Studio modal + saved preset ---------------- */
-  const [avatarOpen, setAvatarOpen] = useState(false);
-  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset | null>(() => {
-    try {
-      const raw = localStorage.getItem("eva_avatar_preset");
-      return raw ? (JSON.parse(raw) as AvatarPreset) : null;
-    } catch {
-      return null;
-    }
-  });
+  /* ---------------- Avatar studio + global preset ---------------- */
+  const [studioOpen, setStudioOpen] = useState(false);
+  const { preset } = useAvatar(); // single source of truth for hero appearance
 
-  /** ---------------- School Mode (tight chat / no voice) ---------------- */
+  /* ---------------- School Mode (tight chat / no voice) ---------------- */
   const [schoolMode, setSchoolMode] = useState(false);
 
   return (
@@ -125,19 +115,20 @@ export default function App() {
         <ProfileBar />
       </div>
 
-      {/* 3D stage */}
+      {/* Main area: 3D stage + right panel */}
       <section className="stage">
+        {/* 3D Canvas */}
         <Canvas camera={{ position: [3.2, 2.9, 3.2], fov: 55 }}>
           <ambientLight intensity={0.9} />
           <directionalLight position={[5, 8, 5]} intensity={1.2} />
           <Sky sunPosition={[100, 20, 100]} />
 
-          {/* Your hero in 3D (procedural rig) */}
+          {/* Your hero in 3D uses the saved preset */}
           <group position={[0, -0.6, 0]}>
-            <HeroRig3D preset={avatarPreset} />
+            <HeroRig3D preset={preset} />
           </group>
 
-          {/* Keep the cube as a nice accent */}
+          {/* Accent cube */}
           <group position={[1.9, 0.2, -0.8]} scale={0.6}>
             <SpinningBlock />
           </group>
@@ -145,7 +136,7 @@ export default function App() {
           <OrbitControls enablePan={false} />
         </Canvas>
 
-        {/* Right-side panel (routes) */}
+        {/* Right-side content (routes) */}
         <aside className="panel">
           {/* ---- PLAY ---- */}
           {tab === "play" && (
@@ -163,14 +154,14 @@ export default function App() {
 
                 <p className="muted small" style={{ marginTop: 8 }}>
                   {cleared
-                    ? `Cleared in ${lastQuiz?.subject} • ${
+                    ? `Cleared • ${lastQuiz?.subject} • ${
                         lastQuiz?.grade === "K" ? "K" : "G" + lastQuiz?.grade
                       } (${lastQuiz?.correctCount}/5)`
-                    : "Pass 3/5 to queue. Hints give a nudge—no full answers on first hint."}
+                    : "Pass 3/5 to queue. Hints nudge—no full answers on first hint."}
                 </p>
               </div>
 
-              {/* Quests (Daily/Weekly) */}
+              {/* Quests */}
               <QuestsPanel />
 
               {/* School Mode toggle */}
@@ -202,17 +193,9 @@ export default function App() {
             <div>
               <h2>Create-Your-Hero</h2>
               <p>Live 3D avatar editor (body, skin, hair, eyes, outfits, trails, win FX).</p>
-              <button className="primary" onClick={() => setAvatarOpen(true)}>
+              <button className="primary" onClick={() => setStudioOpen(true)}>
                 Open Studio
               </button>
-
-              {avatarPreset && (
-                <div className="muted small" style={{ marginTop: 8 }}>
-                  Saved preset: {avatarPreset.body} body • {avatarPreset.skin} skin • {avatarPreset.hair} hair •{" "}
-                  {avatarPreset.eyes} eyes • {avatarPreset.expr}
-                  {avatarPreset.outfitId ? ` • outfit=${avatarPreset.outfitId}` : ""}
-                </div>
-              )}
             </div>
           )}
 
@@ -233,7 +216,7 @@ export default function App() {
 
       {/* Quiz modal */}
       <QuizGate
-        open={quizOpen}
+        open={studioOpen ? false : quizOpen}
         onClose={(res) => {
           if (!res) {
             setQuizOpen(false);
@@ -245,17 +228,7 @@ export default function App() {
       />
 
       {/* Avatar Studio modal */}
-      <AvatarStudio
-        open={avatarOpen}
-        onClose={() => setAvatarOpen(false)}
-        initial={avatarPreset ?? undefined}
-        onSave={(preset) => {
-          setAvatarPreset(preset);
-          try {
-            localStorage.setItem("eva_avatar_preset", JSON.stringify(preset));
-          } catch {}
-        }}
-      />
+      <AvatarStudio open={studioOpen} onClose={() => setStudioOpen(false)} />
     </div>
   );
 }
