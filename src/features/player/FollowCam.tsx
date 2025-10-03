@@ -1,55 +1,54 @@
-// src/features/player/FollowCam.tsx
-import * as THREE from "three";
-import { useThree, useFrame } from "@react-three/fiber";
-import { useRef } from "react";
 
+// src/features/player/FollowCam.tsx
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import { RefObject, useMemo } from "react";
+
+/**
+ * Safe follow camera:
+ * - If targetRef.current is missing, it does nothing (prevents crashes)
+ * - Smoothly lerps position toward target + offset, and looks at target
+ */
 export default function FollowCam({
   targetRef,
-  offset = [0, 4.5, 8],
+  offset = [0, 4.5, 8],    // behind & above
   lerp = 0.12,
 }: {
-  targetRef: React.RefObject<THREE.Object3D>;
+  targetRef: RefObject<THREE.Object3D>;
   offset?: [number, number, number];
-  lerp?: number; // 0..1 per 60fps
+  lerp?: number;
 }) {
   const { camera } = useThree();
 
-  // internal cached vectors (avoid allocations every frame)
-  const initialized = useRef(false);
-  const targetPos = useRef(new THREE.Vector3());
-  const desiredPos = useRef(new THREE.Vector3());
-  const currentPos = useRef(new THREE.Vector3());
-  const off = useRef(new THREE.Vector3(...offset));
+  // Reuse vectors, avoid GC
+  const helpers = useMemo(
+    () => ({
+      targetPos: new THREE.Vector3(),
+      desired: new THREE.Vector3(),
+      off: new THREE.Vector3(...offset),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
-  useFrame((_, delta) => {
+  // If offset prop changes later, update the helper
+  helpers.off.set(offset[0], offset[1], offset[2]);
+
+  useFrame(() => {
     const t = targetRef.current;
-    if (!t) return;
+    if (!t) return; // <-- null-safe
 
-    // read the player world position
-    t.getWorldPosition(targetPos.current);
+    // where the target is
+    t.getWorldPosition(helpers.targetPos);
 
-    // desired camera pos = player + offset
-    desiredPos.current.copy(targetPos.current).add(off.current);
+    // where we want the camera to be
+    helpers.desired.copy(helpers.targetPos).add(helpers.off);
 
-    // init once to avoid a giant jump the first frame
-    if (!initialized.current) {
-      currentPos.current.copy(desiredPos.current);
-      camera.position.copy(currentPos.current);
-      camera.lookAt(targetPos.current);
-      initialized.current = true;
-      return;
-    }
+    // move camera smoothly
+    camera.position.lerp(helpers.desired, lerp);
 
-    // framerate-independent smoothing:
-    // convert "lerp per 60fps" into per-frame alpha
-    const alpha = 1 - Math.pow(1 - lerp, Math.min(1, delta * 60));
-
-    // smooth position
-    currentPos.current.lerp(desiredPos.current, alpha);
-
-    // apply
-    camera.position.copy(currentPos.current);
-    camera.lookAt(targetPos.current);
+    // look at the target
+    camera.lookAt(helpers.targetPos);
   });
 
   return null;
