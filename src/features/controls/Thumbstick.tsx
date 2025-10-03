@@ -1,148 +1,133 @@
 // src/features/controls/Thumbstick.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
-type Vec = { x: number; z: number };
+type Vec2 = { x: number; z: number } | null;
 
 export default function Thumbstick({
-  size = 120,
-  knob = 56,
-  dead = 0.08,
+  size = 120,        // base diameter
+  knob = 46,         // knob diameter
+  margin = 16,       // space from screen edges
   onChange,
 }: {
   size?: number;
   knob?: number;
-  dead?: number; // 0..1
-  onChange?: (v: Vec | null) => void;
+  margin?: number;
+  onChange: (v: Vec2) => void;
 }) {
-  const padRef = useRef<HTMLDivElement | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 }); // -1..1 in pad space
+  const baseRef = useRef<HTMLDivElement | null>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 }); // pixel offset of knob from center
+  const dragging = useRef(false);
+  const center = useRef({ x: 0, y: 0 });
+  const radius = size / 2;
 
-  // Emit vector in XZ plane (x, z)
-  useEffect(() => {
-    const mag = Math.hypot(pos.x, pos.y);
-    if (!dragging || mag < dead) {
-      onChange?.(null);
-      return;
-    }
-    const nx = pos.x / (mag || 1);
-    const ny = pos.y / (mag || 1);
-    // screen-space y+ is down; convert to forward(-z)
-    onChange?.({ x: nx, z: -ny });
-  }, [pos, dragging, dead, onChange]);
-
-  function handleStart(clientX: number, clientY: number) {
-    setDragging(true);
-    update(clientX, clientY);
-  }
-
-  function handleMove(clientX: number, clientY: number) {
-    if (!dragging) return;
-    update(clientX, clientY);
-  }
-
-  function handleEnd() {
-    setDragging(false);
-    setPos({ x: 0, y: 0 });
-    onChange?.(null);
-  }
-
-  function update(clientX: number, clientY: number) {
-    const el = padRef.current;
+  // Update center when layout changes
+  const computeCenter = useCallback(() => {
+    const el = baseRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const r = el.getBoundingClientRect();
+    center.current = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, []);
 
-    let dx = (clientX - cx) / (rect.width / 2);  // -1..1
-    let dy = (clientY - cy) / (rect.height / 2); // -1..1
-    const mag = Math.hypot(dx, dy);
-    if (mag > 1) {
-      dx /= mag;
-      dy /= mag;
-    }
-    setPos({ x: dx, y: dy });
-  }
+  // pointer helpers
+  const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-  // mouse
+  const handleMoveFromClient = (cx: number, cy: number) => {
+    // vector from center to pointer
+    const dx = cx - center.current.x;
+    const dy = cy - center.current.y;
+    // limit to radius
+    const len = Math.hypot(dx, dy);
+    const k = len > radius ? radius / len : 1;
+    const px = dx * k;
+    const py = dy * k;
+    setOffset({ x: px, y: py });
+
+    // normalized vector in [-1, 1]
+    const nx = (px / radius) || 0;
+    const ny = (py / radius) || 0;
+    // Map to game X/Z (up on screen should be negative Z)
+    onChange({ x: nx, z: -ny });
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    if (!dragging.current) return;
+    e.preventDefault();
+    handleMoveFromClient(e.clientX, e.clientY);
+  };
+
+  const endDrag = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    setOffset({ x: 0, y: 0 });
+    onChange({ x: 0, z: 0 }); // <- IMPORTANT: send zero, not null
+  };
+
+  const handlePointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = true;
+    computeCenter();
+    handleMoveFromClient(e.clientX, e.clientY);
+  };
+
   useEffect(() => {
-    function onMove(e: MouseEvent) {
-      if (!dragging) return;
-      e.preventDefault();
-      handleMove(e.clientX, e.clientY);
-    }
-    function onUp() {
-      if (!dragging) return;
-      handleEnd();
-    }
-    window.addEventListener("mousemove", onMove, { passive: false });
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [dragging]);
+    // keep center accurate on resize/scroll
+    const ro = new ResizeObserver(() => computeCenter());
+    if (baseRef.current) ro.observe(baseRef.current);
+    window.addEventListener("scroll", computeCenter, { passive: true });
+    window.addEventListener("resize", computeCenter, { passive: true });
 
-  // touch
-  useEffect(() => {
-    function onMove(e: TouchEvent) {
-      if (!dragging) return;
-      e.preventDefault();
-      const t = e.touches[0];
-      if (!t) return;
-      handleMove(t.clientX, t.clientY);
-    }
-    function onEnd() {
-      if (!dragging) return;
-      handleEnd();
-    }
-    window.addEventListener("touchmove", onMove, { passive: false });
-    window.addEventListener("touchend", onEnd);
-    window.addEventListener("touchcancel", onEnd);
-    return () => {
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onEnd);
-      window.removeEventListener("touchcancel", onEnd);
-    };
-  }, [dragging]);
+    // global listeners while dragging
+    window.addEventListener("pointermove", handlePointerMove as any, { passive: false });
+    window.addEventListener("pointerup", endDrag, { passive: true });
+    window.addEventListener("pointercancel", endDrag, { passive: true });
 
-  const pad = size;
-  const k = knob;
-  const knobX = (pad - k) / 2 * (pos.x);
-  const knobY = (pad - k) / 2 * (pos.y);
+    // first compute on mount
+    computeCenter();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("scroll", computeCenter);
+      window.removeEventListener("resize", computeCenter);
+      window.removeEventListener("pointermove", handlePointerMove as any);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, [computeCenter]);
 
   return (
     <div
-      ref={padRef}
-      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        if (t) handleStart(t.clientX, t.clientY);
-      }}
+      // fixed container in bottom-left with a margin — not clipped by canvas
       style={{
-        width: pad,
-        height: pad,
-        margin: 10,
-        borderRadius: pad,
-        border: "1px solid rgba(255,255,255,.18)",
-        background: "rgba(0,0,0,.35)",
-        position: "relative",
+        position: "fixed",
+        left: margin,
+        bottom: margin,
+        width: size,
+        height: size,
+        zIndex: 9999,
         touchAction: "none",
         userSelect: "none",
-        backdropFilter: "blur(6px)",
+        WebkitUserSelect: "none",
+        // little visual style
+        borderRadius: "50%",
+        background: "radial-gradient(ellipse at 50% 65%, rgba(0,0,0,.55), rgba(0,0,0,.35))",
+        boxShadow: "0 8px 28px rgba(0,0,0,.35), inset 0 -14px 24px rgba(255,255,255,.08)",
       }}
+      ref={baseRef}
+      onPointerDown={handlePointerDown}
     >
       <div
+        // knob centered + offset via translate
         style={{
-          width: k,
-          height: k,
-          borderRadius: k,
           position: "absolute",
-          left: (pad - k) / 2 + knobX,
-          top: (pad - k) / 2 + knobY,
-          background: "rgba(255,255,255,.9)",
-          boxShadow: "0 6px 20px rgba(0,0,0,.35)",
-          transform: "translate(-50%, -50%)",
+          left: "50%",
+          top: "50%",
+          width: knob,
+          height: knob,
+          borderRadius: "50%",
+          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
+          background: "#f1f3f6",
+          boxShadow: "0 10px 20px rgba(0,0,0,.25), inset 0 6px 14px rgba(255,255,255,.65)",
+          touchAction: "none",
+          pointerEvents: "none", // knob doesn't eat events; base handles them
         }}
       />
     </div>
