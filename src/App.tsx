@@ -22,7 +22,7 @@ import ClassroomPortal from "./features/classroom/ClassroomPortal";
 
 // World + player
 import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D";
-import PlayerController from "./features/player/PlayerController";
+import GlideController from "./features/player/GlideController";
 import FollowCam from "./features/player/FollowCam";
 
 // Controls & helpers
@@ -191,34 +191,22 @@ export default function App() {
             onReadyColliders={setOutdoorColliders}
           />
 
-          {/* Player + avatar */}
-          <PlayerController
+          {/* Player + avatar with GlideController */}
+          <GlideController
             key="player-main"
             start={{ x: 0, z: 8 }}
-            colliders={outdoorColliders}
-            speed={6}
-            speedRef={speedRef}
-            radius={0.45}
-            nodeRef={playerRef}
+            accel={18}
+            damping={2.2}
+            maxSpeed={8}
             inputDirRef={stickDirRef}
             manualYawRef={manualYawRef}
-            groundY={0}
-            gravity={30}
-            jumpSpeed={8}
-            airControl={0.7}
-            coyoteMs={120}
-            jumpBufferMs={140}
-            maxAirJumps={1}
-            jumpCutMultiplier={0.45}
-            fallGravityMultiplier={1.4}
-            jumpRef={jumpRef}
-            jumpHeldRef={jumpHeldRef}
+            nodeRef={playerRef}
           >
             {/* Raise the rig so feet aren't inside ground */}
             <group position={[0, 0.4, 0]} scale={0.95}>
               <HeroRig3D preset={preset} moveAmount={0} />
             </group>
-          </PlayerController>
+          </GlideController>
 
           {/* Follow camera */}
           <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
