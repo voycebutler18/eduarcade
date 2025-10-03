@@ -34,12 +34,25 @@ export default function HeroRig3D({
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
-    root.current.rotation.y = Math.sin(t * 1.4) * 0.05;
-    gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * 0.012;
-    gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * 0.06;
-    gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * 0.06;
-    gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * 0.04;
-    gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * 0.04;
+    // DON'T rotate root - it conflicts with PlayerController
+    // root.current.rotation.y = Math.sin(t * 1.4) * 0.05;
+    
+    // Only animate child parts
+    if (gTorso.current) {
+      gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * 0.012;
+    }
+    if (gLA.current) {
+      gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * 0.06;
+    }
+    if (gRA.current) {
+      gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * 0.06;
+    }
+    if (gLL.current) {
+      gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * 0.04;
+    }
+    if (gRL.current) {
+      gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * 0.04;
+    }
   });
 
   return (
