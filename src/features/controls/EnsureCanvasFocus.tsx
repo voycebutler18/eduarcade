@@ -3,31 +3,42 @@ import { useEffect } from "react";
 
 /**
  * EnsureCanvasFocus
- * - Makes sure keyboard input goes to the canvas.
- * - When user clicks/taps anywhere on the renderer, it grabs focus.
- * - Prevents arrow keys from being ignored by the browser.
+ * Makes sure the R3F canvas can receive keyboard events (WASD/Arrows).
+ * - On first pointer/touch inside the canvas, we call focus() on it.
+ * - Also sets tabIndex to 0 so the element is focusable.
  */
 export default function EnsureCanvasFocus() {
   useEffect(() => {
-    const canvas = document.querySelector("canvas");
-    if (!canvas) return;
+    // find the nearest canvas element created by @react-three/fiber
+    const canvases = document.getElementsByTagName("canvas");
+    if (!canvases || canvases.length === 0) return;
+    const canvas = canvases[0];
 
-    const makeFocusable = () => {
-      // allow canvas to take tab focus
-      canvas.setAttribute("tabindex", "0");
+    // make it focusable
+    (canvas as HTMLCanvasElement & { tabIndex?: number }).tabIndex = 0;
+
+    const focusCanvas = () => {
+      // avoid stealing focus from inputs
+      const active = document.activeElement as HTMLElement | null;
+      const isTyping =
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as any).isContentEditable);
+      if (!isTyping) {
+        canvas.focus();
+      }
     };
 
-    const focusOnClick = () => {
-      canvas.focus();
-    };
+    canvas.addEventListener("pointerdown", focusCanvas, { passive: true });
+    canvas.addEventListener("touchstart", focusCanvas, { passive: true });
 
-    makeFocusable();
-    canvas.addEventListener("mousedown", focusOnClick);
-    canvas.addEventListener("touchstart", focusOnClick);
+    // try to focus once on mount (desktop)
+    focusCanvas();
 
     return () => {
-      canvas.removeEventListener("mousedown", focusOnClick);
-      canvas.removeEventListener("touchstart", focusOnClick);
+      canvas.removeEventListener("pointerdown", focusCanvas as any);
+      canvas.removeEventListener("touchstart", focusCanvas as any);
     };
   }, []);
 
