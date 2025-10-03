@@ -9,8 +9,11 @@ import type { Collider } from "../campus/OutdoorWorld3D";
  * - Keyboard (WASD / Arrow keys) via e.code (layout-safe)
  * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
  * - Collision against simple circle/box colliders
- * - Persistent facing: smooth yaw damping toward movement direction
- * - NEW: supports dynamic speed via speedRef (e.g., Shift sprint)
+ * - Persistent facing with smooth damping
+ * - Live speed via speedRef (e.g., Shift sprint)
+ * - NEW:
+ *    - ignoreInputYaw: movement won't change facing
+ *    - manualYawRef: externally force yaw (radians) until released
  */
 
 type Vec2 = { x: number; z: number };
@@ -19,12 +22,15 @@ type DirRef = React.MutableRefObject<{ x: number; z: number } | null>;
 export default function PlayerController({
   start = { x: 0, z: 6 },
   speed = 6,                                // base speed (fallback)
-  speedRef,                                 // <- NEW: live speed override (e.g., SprintModifier)
+  speedRef,                                 // live speed override (e.g., SprintModifier)
   radius = 0.45,
   colliders = [],
   nodeRef,
   inputDirRef,                              // optional thumbstick/virtual dir
   onMove,
+  // NEW:
+  ignoreInputYaw = false,
+  manualYawRef,
   children,
 }: {
   start?: Vec2;
@@ -35,6 +41,9 @@ export default function PlayerController({
   nodeRef?: React.MutableRefObject<Object3D | null>;
   inputDirRef?: DirRef;
   onMove?: (pos: Vec2) => void;
+  // NEW:
+  ignoreInputYaw?: boolean;
+  manualYawRef?: React.MutableRefObject<number | null>;
   children?: React.ReactNode;
 }) {
   const localRef = useRef<Group>(null);
@@ -174,8 +183,10 @@ export default function PlayerController({
 
       const dir = readInput();
       if (dir.x !== 0 || dir.z !== 0) {
-        // update facing target whenever we have input
-        targetYaw.current = Math.atan2(dir.x, dir.z);
+        // only let input change facing if not locked/ignored
+        if (!ignoreInputYaw && !(manualYawRef && manualYawRef.current != null)) {
+          targetYaw.current = Math.atan2(dir.x, dir.z);
+        }
 
         const dx = dir.x * currentSpeed * STEP;
         const dz = dir.z * currentSpeed * STEP;
@@ -188,13 +199,17 @@ export default function PlayerController({
       }
     }
 
-    // smooth yaw toward target if present
+    // Yaw update:
     const DAMP = 16; // higher = snappier
-    if (targetYaw.current !== null) {
+    if (manualYawRef && manualYawRef.current != null) {
+      // external override wins (sticky until you set it back to null)
+      yaw.current = manualYawRef.current;
+    } else if (targetYaw.current !== null) {
       const d = shortestAngle(yaw.current, targetYaw.current);
       const t = 1 - Math.exp(-DAMP * clamped); // exponential smoothing
       yaw.current = yaw.current + d * t;
     }
+    // else: keep existing yaw (sticky)
 
     // apply transforms every frame (prevents snap-backs)
     if (ref.current) {
