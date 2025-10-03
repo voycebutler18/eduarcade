@@ -8,13 +8,9 @@ import type { Collider } from "../campus/OutdoorWorld3D";
  * PlayerController (top-down XZ + Y jump/gravity)
  * - Keyboard (WASD / Arrows) + Thumbstick (inputDirRef {x,z})
  * - Smooth facing (sticky) + manual yaw lock + ignoreInputYaw
- * - Collides in XZ (simple circle/box)
+ * - Collides in XZ (circle vs circle/box) with overlap escape
  * - Live speed via speedRef (sprint)
- * - Jump & gravity on Y
- * - Coyote time + jump buffer
- * - NEW (#21):
- *    • Variable jump height (release to “short hop”)
- *    • Air jumps (double-jump) via maxAirJumps
+ * - Jump system: coyote time, jump buffer, variable height, air jumps
  */
 
 type Vec2 = { x: number; z: number };
@@ -37,14 +33,12 @@ export default function PlayerController({
   gravity = 30,
   jumpSpeed = 8,
   airControl = 0.65,
-  // QoL jump params
   coyoteMs = 120,
   jumpBufferMs = 120,
-  // NEW: variable height + air jumps
-  maxAirJumps = 1,           // 1 = classic double-jump
-  jumpCutMultiplier = 0.45,  // when jump is released while rising: vy *= this
-  fallGravityMultiplier = 1.4, // extra gravity when falling (snappier falls)
-  // Optional external jump signals (press/hold). If not provided, we read Space.
+  maxAirJumps = 1,
+  jumpCutMultiplier = 0.45,
+  fallGravityMultiplier = 1.4,
+  // Optional external jump signals (press/hold). If not provided, Space is used.
   jumpRef,
   jumpHeldRef,
   children,
@@ -109,13 +103,12 @@ export default function PlayerController({
     const wanted = new Set([
       "KeyW", "KeyA", "KeyS", "KeyD",
       "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-      "Space", // read Space for built-in jump (if no external refs)
+      "Space",
     ]);
 
     const down = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
-
       if (wanted.has(e.code)) {
         e.preventDefault();
         keys.current[e.code] = true;
@@ -169,13 +162,58 @@ export default function PlayerController({
     return m > 0 ? { x: x / m, z: z / m } : { x: 0, z: 0 };
   }
 
+  // Penetration depth (>0 means intersecting, <=0 means clear). Lower is better.
+  function penetration(x: number, z: number, r: number, cs: Collider[]): number {
+    let worst = -Infinity; // track maximum (deepest) penetration
+    let any = false;
+    for (const c of cs) {
+      if (c.kind === "circle") {
+        const dx = x - c.x, dz = z - c.z;
+        const dist = Math.hypot(dx, dz);
+        const pen = (r + c.r) - dist;
+        if (pen > worst) worst = pen;
+        any = true;
+      } else {
+        const hw = c.w / 2, hd = c.d / 2;
+        const cx = clamp(x, c.x - hw, c.x + hw);
+        const cz = clamp(z, c.z - hd, c.z + hd);
+        const dx = x - cx, dz = z - cz;
+        const dist = Math.hypot(dx, dz);
+        const pen = r - dist; // if inside, dist < r -> positive
+        if (pen > worst) worst = pen;
+        any = true;
+      }
+    }
+    return any ? Math.max(worst, -0) : -0; // ensure <=0 when clear
+  }
+
+  // Movement that allows escaping from overlaps (prefers moves that reduce penetration)
   function tryMove(cur: Vec2, dx: number, dz: number): Vec2 {
-    let nx = cur.x + dx;
-    let nz = cur.z;
-    if (intersects(nx, nz, radius, colliders)) nx = cur.x;
-    nz = cur.z + dz;
-    if (intersects(nx, nz, radius, colliders)) nz = cur.z;
-    return { x: nx, z: nz };
+    const nextX = { x: cur.x + dx, z: cur.z };
+    const nextZ = { x: cur.x,     z: cur.z + dz };
+
+    const curPen = penetration(cur.x, cur.z, radius, colliders);
+    const penX   = penetration(nextX.x, nextX.z, radius, colliders);
+    const penZ   = penetration(nextZ.x, nextZ.z, radius, colliders);
+
+    // If we're not intersecting now, only accept moves that keep us non-intersecting.
+    if (curPen <= 0) {
+      const nx = penX <= 0 ? nextX.x : cur.x;
+      const nz = penZ <= 0 ? nextZ.z : cur.z;
+      return { x: nx, z: nz };
+    }
+
+    // If we ARE intersecting, accept any move that reduces penetration (helps unstick).
+    let best: Vec2 = cur;
+    let bestPen = curPen;
+
+    if (penX < bestPen) {
+      best = nextX; bestPen = penX;
+    }
+    if (penZ < bestPen) {
+      best = nextZ; bestPen = penZ;
+    }
+    return best;
   }
 
   const shortestAngle = (a: number, b: number) => {
@@ -225,18 +263,13 @@ export default function PlayerController({
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
-      // 0) Jump input edge detection:
-      //    Prefer external refs; else fall back to Space.
+      // 0) Jump input edge detection (external refs > Space fallback)
       const spaceHeld = jumpHeldRef?.current ?? !!keys.current["Space"];
       const spaceDownEdge =
         jumpRef?.current === true ||
         (!!keys.current["Space"] && !prevSpace.current);
 
-      // Consume external one-shot press into buffer window
-      if (jumpRef && jumpRef.current) {
-        jumpRef.current = false;
-      }
-
+      if (jumpRef && jumpRef.current) jumpRef.current = false;
       if (spaceDownEdge) {
         jumpBufferUntilMs.current = performance.now() + jumpBufferMs;
       }
@@ -258,12 +291,12 @@ export default function PlayerController({
         }
       }
 
-      // 2) Gravity integration (apply stronger gravity on fall)
+      // 2) Gravity (stronger when falling)
       const g = vy.current > 0 ? gravity : gravity * fallGravityMultiplier;
       vy.current -= g * STEP;
       y.current += vy.current * STEP;
 
-      // 3) Ground resolution + coyote bookkeeping + air-jump reset
+      // 3) Ground resolution + bookkeeping
       const wasGrounded = grounded.current;
       if (y.current <= groundY) {
         y.current = groundY;
@@ -275,8 +308,7 @@ export default function PlayerController({
       if (grounded.current) {
         lastGroundedMs.current = performance.now();
         if (!wasGrounded) {
-          // landed — reset air jumps
-          airJumpsUsed.current = 0;
+          airJumpsUsed.current = 0; // landed
         }
       }
 
@@ -291,7 +323,7 @@ export default function PlayerController({
 
       if (canGroundJump || canCoyoteJump || canAirJump) {
         vy.current = jumpSpeed;
-        y.current += vy.current * STEP * 0.5; // tiny lift to avoid re-grounding same step
+        y.current += vy.current * STEP * 0.5;
         grounded.current = false;
         jumpBufferUntilMs.current = 0;
         if (canAirJump && !canGroundJump && !canCoyoteJump) {
@@ -299,13 +331,13 @@ export default function PlayerController({
         }
       }
 
-      // 5) Variable jump height: if the button is released while rising, cut the velocity
+      // 5) Variable jump height (short hop on release)
       if (!spaceHeld && vy.current > 0) {
         vy.current *= jumpCutMultiplier;
       }
     }
 
-    // Yaw update every frame (sticky by default)
+    // Yaw update (sticky/manual)
     const DAMP = 16;
     if (manualYawRef && manualYawRef.current != null) {
       yaw.current = manualYawRef.current;
@@ -340,20 +372,5 @@ export default function PlayerController({
   );
 }
 
-/* ------------- collision (XZ only) ------------- */
-function intersects(x: number, z: number, r: number, cs: Collider[]) {
-  for (const c of cs) {
-    if (c.kind === "circle") {
-      const dx = x - c.x, dz = z - c.z;
-      if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
-    } else {
-      const hw = c.w / 2, hd = c.d / 2;
-      const cx = clamp(x, c.x - hw, c.x + hw);
-      const cz = clamp(z, c.z - hd, c.z + hd);
-      const dx = x - cx, dz = z - cz;
-      if (dx * dx + dz * dz < r * r) return true;
-    }
-  }
-  return false;
-}
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/* ------------- collision helpers (XZ only) ------------- */
+function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
