@@ -156,12 +156,11 @@ export default function App() {
   // scene switching (Play)
   const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
   const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
-  const [playerPos, setPlayerPos] = useState<{ x: number; z: number }>({ x: 0, z: 8 });
 
   function enterSchool() {
     setScene("campus");
   }
-  function enterPlot(plotId: string) {
+  function enterPlot(_plotId: string) {
     go("build");
   }
 
@@ -170,6 +169,9 @@ export default function App() {
 
   // Play scene (Outdoor vs Campus)
   function PlayScene() {
+    // Ref that both the controller (mover) and FollowCam will use
+    const playerRef = useRef<THREE.Object3D>(null);
+
     if (scene === "outdoor") {
       return (
         <>
@@ -180,21 +182,21 @@ export default function App() {
             onReadyColliders={setOutdoorColliders}
           />
 
-          {/* Player + real avatar + follow-cam */}
+          {/* Player + your real avatar (moves as one group) */}
           <PlayerController
             start={{ x: 0, z: 8 }}
             colliders={outdoorColliders}
             speed={6}
             radius={0.45}
-            onMove={(p) => setPlayerPos(p)}
+            nodeRef={playerRef}
           >
-            {/* Your actual customized avatar */}
             <group position={[0, 0, 0]} scale={0.95}>
               <HeroRig3D preset={preset} />
             </group>
           </PlayerController>
 
-          <FollowCam target={[playerPos.x, 0, playerPos.z]} />
+          {/* SAFE follow cam (uses ref, null-safe) */}
+          <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
         </>
       );
     }
@@ -286,13 +288,7 @@ export default function App() {
               {/* School campus shortcuts (UI) */}
               <div style={{ marginTop: 6 }}>
                 <h3 style={{ margin: "6px 0 8px" }}>School Campus</h3>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 10,
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <ClassroomPortal classId="HOMEROOM" label="Homeroom" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
                   <ClassroomPortal classId="MATH" label="Math" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
                   <ClassroomPortal classId="ELA" label="ELA / Reading" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
