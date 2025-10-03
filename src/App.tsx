@@ -276,7 +276,7 @@ export default function App() {
         {/* NEW: on-screen thumbstick overlay (fixed, above canvas) */}
         {tab === "play" && showStick && (
           <div style={{ position: "fixed", left: 0, bottom: 0, zIndex: 60 }}>
-            <Thumbstick onChange={(v) => { stickDirRef.current = v; }} />
+            <Thumbstick onChange={(v) => { stickDirRef.current = v ?? { x: 0, z: 0 }; }} />
           </div>
         )}
 
