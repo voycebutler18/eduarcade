@@ -193,6 +193,7 @@ export default function App() {
 
           {/* Player + avatar */}
           <PlayerController
+            key="player-main"
             start={{ x: 0, z: 8 }}
             colliders={outdoorColliders}
             speed={6}
