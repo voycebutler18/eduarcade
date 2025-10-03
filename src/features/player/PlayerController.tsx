@@ -1,6 +1,7 @@
 // src/features/player/PlayerController.tsx
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { useFrame } from "@react-three/fiber";
 import type { ReactNode } from "react";
 import { Collider } from "../campus/OutdoorWorld3D";
 
@@ -13,7 +14,7 @@ export default function PlayerController({
   colliders = [],
   onMove,
   nodeRef,
-  inputDirRef,   // <- external thumbstick direction, { x, z } from Thumbstick
+  inputDirRef,
   children,
 }: {
   start?: Vec2;
@@ -28,10 +29,13 @@ export default function PlayerController({
   const localRef = useRef<THREE.Group>(null);
   const groupRef = nodeRef ?? localRef;
 
-  // Position and velocity refs (NO React state!)
   const posRef = useRef<Vec2>({ ...start });
   const velRef = useRef<Vec2>({ x: 0, z: 0 });
   const keys = useRef<Record<string, boolean>>({});
+
+  // Constants for movement feel
+  const ACCEL = 40;
+  const DECEL = 35;
 
   // Initialize position on mount
   useEffect(() => {
@@ -41,19 +45,19 @@ export default function PlayerController({
       groupRef.current.position.set(start.x, 0, start.z);
     }
     onMove?.({ ...start });
-  }, [start, groupRef, onMove]);
+  }, [start.x, start.z]);
 
-  // Input: Keyboard
+  // Keyboard input
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       keys.current[key] = true;
       
-      // Prevent page scrolling for arrow keys
       if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
         e.preventDefault();
       }
     };
+    
     const up = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       keys.current[key] = false;
@@ -62,91 +66,71 @@ export default function PlayerController({
         e.preventDefault();
       }
     };
+    
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
   }, []);
 
-  // Animation loop: buttery smooth movement
-  useEffect(() => {
-    let last = performance.now();
-    let raf = 0;
-    const ACCEL = 40;
-    const DECEL = 35;
+  // Movement logic using useFrame (NOT requestAnimationFrame)
+  useFrame((state, dt) => {
+    if (!groupRef.current) return;
+
+    // Gather input
+    let ix = 0, iz = 0;
+    const stick = inputDirRef?.current;
     
-    const tick = () => {
-      const now = performance.now();
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
+    if (stick && (Math.abs(stick.x) > 0.001 || Math.abs(stick.z) > 0.001)) {
+      ix = stick.x;
+      iz = stick.z;
+    } else {
+      if (keys.current["w"] || keys.current["arrowup"]) iz -= 1;
+      if (keys.current["s"] || keys.current["arrowdown"]) iz += 1;
+      if (keys.current["a"] || keys.current["arrowleft"]) ix -= 1;
+      if (keys.current["d"] || keys.current["arrowright"]) ix += 1;
+    }
 
-      // --- Gather input ---
-      let ix = 0, iz = 0;
-      const stick = inputDirRef?.current;
-      
-      // Thumbstick has priority if non-zero
-      if (stick && (Math.abs(stick.x) > 0.001 || Math.abs(stick.z) > 0.001)) {
-        ix = stick.x;
-        iz = stick.z;
-      } else {
-        // Keyboard input
-        if (keys.current["w"] || keys.current["arrowup"]) iz -= 1;
-        if (keys.current["s"] || keys.current["arrowdown"]) iz += 1;
-        if (keys.current["a"] || keys.current["arrowleft"]) ix -= 1;
-        if (keys.current["d"] || keys.current["arrowright"]) ix += 1;
-      }
+    // Velocity interpolation
+    const mag = Math.hypot(ix, iz);
+    const dirX = mag ? ix / mag : 0;
+    const dirZ = mag ? iz / mag : 0;
+    const targetVx = dirX * speed;
+    const targetVz = dirZ * speed;
 
-      // --- Velocity interpolation ---
-      const mag = Math.hypot(ix, iz);
-      let dirX = mag ? ix / mag : 0;
-      let dirZ = mag ? iz / mag : 0;
-      const targetVx = dirX * speed;
-      const targetVz = dirZ * speed;
-
-      velRef.current.x += (targetVx - velRef.current.x) * ACCEL * dt;
-      velRef.current.z += (targetVz - velRef.current.z) * ACCEL * dt;
-      
-      // Deceleration when no input
-      if (!mag) {
-        velRef.current.x *= Math.exp(-DECEL * dt);
-        velRef.current.z *= Math.exp(-DECEL * dt);
-      }
-
-      // --- Compute next position ---
-      let nx = posRef.current.x + velRef.current.x * dt;
-      let nz = posRef.current.z + velRef.current.z * dt;
-      nx = +nx.toFixed(5);
-      nz = +nz.toFixed(5);
-
-      // --- Collisions ---
-      if (intersects({ x: nx, z: nz }, radius, colliders)) {
-        nx = posRef.current.x;
-        nz = posRef.current.z;
-        velRef.current.x = 0;
-        velRef.current.z = 0;
-      }
-
-      // --- Apply position directly to Three.js (NO React state updates) ---
-      if (nx !== posRef.current.x || nz !== posRef.current.z) {
-        posRef.current = { x: nx, z: nz };
-        if (groupRef.current) {
-          groupRef.current.position.set(nx, 0, nz);
-        }
-        onMove?.({ x: nx, z: nz });
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
+    velRef.current.x += (targetVx - velRef.current.x) * ACCEL * dt;
+    velRef.current.z += (targetVz - velRef.current.z) * ACCEL * dt;
     
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [speed, radius, colliders, onMove, inputDirRef, groupRef]);
+    if (!mag) {
+      velRef.current.x *= Math.exp(-DECEL * dt);
+      velRef.current.z *= Math.exp(-DECEL * dt);
+    }
+
+    // Compute next position
+    let nx = posRef.current.x + velRef.current.x * dt;
+    let nz = posRef.current.z + velRef.current.z * dt;
+
+    // Collisions
+    if (intersects({ x: nx, z: nz }, radius, colliders)) {
+      nx = posRef.current.x;
+      nz = posRef.current.z;
+      velRef.current.x = 0;
+      velRef.current.z = 0;
+    }
+
+    // Apply position
+    if (nx !== posRef.current.x || nz !== posRef.current.z) {
+      posRef.current = { x: nx, z: nz };
+      groupRef.current.position.set(nx, 0, nz);
+      onMove?.({ x: nx, z: nz });
+    }
+  });
 
   return (
     <group ref={groupRef as any}>
-      {/* Default fallback capsule if no children */}
       {children ?? (
         <mesh position={[0, 0.45, 0]} castShadow>
           <cylinderGeometry args={[radius, radius, 0.9, 12]} />
@@ -157,7 +141,7 @@ export default function PlayerController({
   );
 }
 
-/* ---- Collision helpers ---- */
+/* Collision helpers */
 function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
@@ -165,7 +149,6 @@ function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
       const dz = p.z - c.z;
       if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
     } else {
-      // axis-aligned box
       const hw = c.w / 2;
       const hd = c.d / 2;
       const cx = clamp(p.x, c.x - hw, c.x + hw);
