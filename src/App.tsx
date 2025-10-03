@@ -172,7 +172,6 @@ export default function App() {
   const jumpRef = useRef<boolean>(false);             // edge (press)
   const jumpHeldRef = useRef<boolean>(false);         // held state (for variable height)
 
-  const [moving, setMoving] = useState(false);
   const [showStick] = useState(true);
 
   function enterSchool() { setScene("campus"); }
@@ -202,7 +201,6 @@ export default function App() {
             nodeRef={playerRef}
             inputDirRef={stickDirRef}
             manualYawRef={manualYawRef}
-            // Jump setup from #21
             groundY={0}
             gravity={30}
             jumpSpeed={8}
@@ -214,15 +212,10 @@ export default function App() {
             fallGravityMultiplier={1.4}
             jumpRef={jumpRef}
             jumpHeldRef={jumpHeldRef}
-            onMove={() => {
-              // derive "moving" from last input vector (works for keys & stick)
-              const d = stickDirRef.current ?? { x: 0, z: 0 };
-              setMoving(Math.abs(d.x) + Math.abs(d.z) > 0.001);
-            }}
           >
             {/* Raise the rig so feet aren't inside ground */}
             <group position={[0, 0.4, 0]} scale={0.95}>
-              <HeroRig3D preset={preset} moveAmount={moving ? 1 : 0.25} />
+              <HeroRig3D preset={preset} moveAmount={0.5} />
             </group>
           </PlayerController>
 
