@@ -1,19 +1,7 @@
-// src/features/player/PlayerController.tsx
-import { useEffect, useRef, useState, RefObject } from "react";
-import { type Collider } from "../campus/OutdoorWorld3D";
+import { useEffect, useRef, useState } from "react";
+import { Collider } from "../campus/OutdoorWorld3D";
 
 type Vec2 = { x: number; z: number };
-
-type Props = {
-  start?: Vec2;
-  speed?: number;
-  radius?: number;
-  colliders?: Collider[];
-  onMove?: (pos: Vec2) => void;
-  children?: React.ReactNode;
-  /** Ref to the moving group so cameras can follow it safely */
-  nodeRef?: RefObject<THREE.Object3D>;
-};
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
@@ -21,93 +9,93 @@ export default function PlayerController({
   radius = 0.45,
   colliders = [],
   onMove,
-  children,
-  nodeRef,
-}: Props) {
-  const [renderPos, setRenderPos] = useState<Vec2>(start);
+  nodeRef,                 // NEW: group ref so a camera can follow
+  inputDirRef,             // NEW: external thumbstick direction (-1..1)
+  children,                // NEW: your avatar model
+}: {
+  start?: Vec2;
+  speed?: number;
+  radius?: number;
+  colliders?: Collider[];
+  onMove?: (pos: Vec2) => void;
+  nodeRef?: React.MutableRefObject<THREE.Object3D | null>;
+  inputDirRef?: React.MutableRefObject<Vec2 | null>;
+  children?: React.ReactNode;
+}) {
+  const [pos, setPos] = useState<Vec2>(start);
+  const keys = useRef<Record<string, boolean>>({});
 
-  const posRef = useRef<Vec2>(start);
-  const keysRef = useRef<Record<string, boolean>>({});
-  const collidersRef = useRef<Collider[]>(colliders);
-  collidersRef.current = colliders;
-
-  // prevent page scroll on arrows
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (
-        k === "arrowup" ||
-        k === "arrowdown" ||
-        k === "arrowleft" ||
-        k === "arrowright" ||
-        k === " "
-      ) {
-        e.preventDefault();
-      }
-      keysRef.current[k] = true;
-    };
-    const up = (e: KeyboardEvent) => {
-      keysRef.current[e.key.toLowerCase()] = false;
-    };
-    window.addEventListener("keydown", down, { passive: false });
+    const down = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = true);
+    const up   = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = false);
+    window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     return () => {
-      window.removeEventListener("keydown", down as any);
-      window.removeEventListener("keyup", up as any);
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
     };
   }, []);
 
   useEffect(() => {
     let last = performance.now();
     let raf = 0;
-
     const tick = () => {
       const now = performance.now();
       const dt = (now - last) / 1000;
       last = now;
 
-      let vx = 0,
-        vz = 0;
-      const keys = keysRef.current;
+      // --- gather input ---
+      let ix = 0, iz = 0;
 
-      if (keys["w"] || keys["arrowup"]) vz -= 1;
-      if (keys["s"] || keys["arrowdown"]) vz += 1;
-      if (keys["a"] || keys["arrowleft"]) vx -= 1;
-      if (keys["d"] || keys["arrowright"]) vx += 1;
+      // thumbstick (if present) has priority when non-zero
+      const stick = inputDirRef?.current;
+      if (stick && (Math.abs(stick.x) > 0.001 || Math.abs(stick.z) > 0.001)) {
+        ix = stick.x;
+        iz = stick.z;
+      } else {
+        if (keys.current["w"] || keys.current["arrowup"]) iz -= 1;
+        if (keys.current["s"] || keys.current["arrowdown"]) iz += 1;
+        if (keys.current["a"] || keys.current["arrowleft"]) ix -= 1;
+        if (keys.current["d"] || keys.current["arrowright"]) ix += 1;
+      }
 
-      if (vx !== 0 || vz !== 0) {
-        const mag = Math.hypot(vx, vz) || 1;
-        vx = (vx / mag) * speed * dt;
-        vz = (vz / mag) * speed * dt;
+      if (ix || iz) {
+        const mag = Math.hypot(ix, iz) || 1;
+        let vx = (ix / mag) * speed * dt;
+        let vz = (iz / mag) * speed * dt;
 
-        const p = posRef.current;
-        let nx = p.x + vx;
-        let nz = p.z;
+        // move X then Z with collision
+        let nx = pos.x + vx;
+        let nz = pos.z;
 
-        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) nx = p.x;
-        nz = p.z + vz;
-        if (intersects({ x: nx, z: nz }, radius, collidersRef.current)) nz = p.z;
+        if (intersects({ x: nx, z: nz }, radius, colliders)) nx = pos.x;
 
-        if (nx !== p.x || nz !== p.z) {
+        nz = pos.z + vz;
+        if (intersects({ x: nx, z: nz }, radius, colliders)) nz = pos.z;
+
+        if (nx !== pos.x || nz !== pos.z) {
           const np = { x: nx, z: nz };
-          posRef.current = np;
-          setRenderPos(np);
+          setPos(np);
           onMove?.(np);
+          if (nodeRef?.current) nodeRef.current.position.set(np.x, 0, np.z);
         }
       }
 
       raf = requestAnimationFrame(tick);
     };
-
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [onMove, radius, speed]);
+  }, [pos, speed, radius, colliders, onMove, inputDirRef, nodeRef]);
 
   return (
-    <group ref={nodeRef as any} position={[renderPos.x, 0, renderPos.z]}>
+    <group
+      ref={nodeRef as any}
+      position={[pos.x, 0, pos.z]}
+    >
+      {/* Default fallback body if no children were passed */}
       {children ?? (
         <mesh position={[0, 0.45, 0]} castShadow>
-          <cylinderGeometry args={[radius, radius, 0.9, 16]} />
+          <cylinderGeometry args={[radius, radius, 0.9, 12]} />
           <meshStandardMaterial color="#60a5fa" />
         </mesh>
       )}
@@ -115,7 +103,7 @@ export default function PlayerController({
   );
 }
 
-/* ---- collisions ---- */
+/* -------- collision helpers -------- */
 function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
