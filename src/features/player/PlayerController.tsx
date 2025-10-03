@@ -10,6 +10,7 @@ import type { Collider } from "../campus/OutdoorWorld3D";
  * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
  * - Collision against simple circle/box colliders
  * - Persistent facing: smooth yaw damping toward movement direction
+ * - NEW: supports dynamic speed via speedRef (e.g., Shift sprint)
  */
 
 type Vec2 = { x: number; z: number };
@@ -17,16 +18,18 @@ type DirRef = React.MutableRefObject<{ x: number; z: number } | null>;
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
-  speed = 6,
+  speed = 6,                                // base speed (fallback)
+  speedRef,                                 // <- NEW: live speed override (e.g., SprintModifier)
   radius = 0.45,
   colliders = [],
   nodeRef,
-  inputDirRef,         // <- optional thumbstick/virtual dir
+  inputDirRef,                              // optional thumbstick/virtual dir
   onMove,
   children,
 }: {
   start?: Vec2;
   speed?: number;
+  speedRef?: React.MutableRefObject<number | undefined>;
   radius?: number;
   colliders?: Collider[];
   nodeRef?: React.MutableRefObject<Object3D | null>;
@@ -163,6 +166,9 @@ export default function PlayerController({
 
     let moved = false;
 
+    // read current speed (ref wins, else prop fallback)
+    const currentSpeed = speedRef?.current ?? speed;
+
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
@@ -171,8 +177,8 @@ export default function PlayerController({
         // update facing target whenever we have input
         targetYaw.current = Math.atan2(dir.x, dir.z);
 
-        const dx = dir.x * speed * STEP;
-        const dz = dir.z * speed * STEP;
+        const dx = dir.x * currentSpeed * STEP;
+        const dz = dir.z * currentSpeed * STEP;
         const next = tryMove(pos.current, dx, dz);
 
         if (Math.abs(next.x - pos.current.x) > EPS || Math.abs(next.z - pos.current.z) > EPS) {
