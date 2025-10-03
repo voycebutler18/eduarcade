@@ -25,8 +25,10 @@ import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D"
 import PlayerController from "./features/player/PlayerController";
 import FollowCam from "./features/player/FollowCam";
 
-// NEW: on-screen thumbstick
+// On-screen thumbstick
 import Thumbstick from "./features/controls/Thumbstick";
+// NEW: ensure keyboard focus hits the canvas
+import EnsureCanvasFocus from "./features/controls/EnsureCanvasFocus";
 
 // Optional campus interior (safe fallback)
 let Campus3D: any;
@@ -145,7 +147,7 @@ export default function App() {
     if (!cleared) {
       setQuizOpen(true);
       return;
-    }
+      }
     setQueueing(true);
     setTimeout(() => {
       setQueueing(false);
@@ -161,9 +163,10 @@ export default function App() {
   const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
   const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
 
-  // NEW: refs for thumbstick + player group (for follow cam)
+  // refs for thumbstick + player + movement state
   const playerRef = useRef<THREE.Object3D | null>(null);
   const stickDirRef = useRef<{ x: number; z: number } | null>(null);
+  const [moving, setMoving] = useState(false);
   const [showStick] = useState(true); // toggle if you want later
 
   function enterSchool() {
@@ -188,21 +191,26 @@ export default function App() {
             onReadyColliders={setOutdoorColliders}
           />
 
-          {/* Player + your real avatar (moves as one group) */}
+          {/* Player + avatar */}
           <PlayerController
             start={{ x: 0, z: 8 }}
             colliders={outdoorColliders}
             speed={6}
             radius={0.45}
             nodeRef={playerRef}
-            inputDirRef={stickDirRef}  // << thumbstick vector
+            inputDirRef={stickDirRef} // thumbstick/virtual dir & keyboard merged inside controller
+            onMove={() => {
+              // derive "moving" from the last input vector (works for keys & stick)
+              const d = stickDirRef.current ?? { x: 0, z: 0 };
+              setMoving(Math.abs(d.x) + Math.abs(d.z) > 0.001);
+            }}
           >
             <group position={[0, 0, 0]} scale={0.95}>
-              <HeroRig3D preset={preset} />
+              <HeroRig3D preset={preset} moveAmount={moving ? 1 : 0.25} />
             </group>
           </PlayerController>
 
-          {/* Follow camera */}
+          {/* Follow camera (relative to player facing) */}
           <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
         </>
       );
@@ -271,12 +279,19 @@ export default function App() {
           <Sky sunPosition={[100, 20, 100]} />
 
           {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
+
+          {/* Make sure the canvas grabs keyboard focus on click/tap */}
+          <EnsureCanvasFocus />
         </Canvas>
 
-        {/* NEW: on-screen thumbstick overlay (fixed, above canvas) */}
-        {tab === "play" && showStick && (
+        {/* On-screen thumbstick overlay (fixed, above canvas) */}
+        {tab === "play" && (
           <div style={{ position: "fixed", left: 0, bottom: 0, zIndex: 60 }}>
-            <Thumbstick onChange={(v) => { stickDirRef.current = v ?? { x: 0, z: 0 }; }} />
+            <Thumbstick
+              onChange={(v) => {
+                stickDirRef.current = v ?? { x: 0, z: 0 };
+              }}
+            />
           </div>
         )}
 
