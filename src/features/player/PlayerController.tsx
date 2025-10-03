@@ -1,7 +1,4 @@
-// src/features/player/PlayerController.tsx
-import { useEffect, useRef } from "react";
-import * as THREE from "three";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Collider } from "../campus/OutdoorWorld3D";
 
 type Vec2 = { x: number; z: number };
@@ -12,142 +9,96 @@ export default function PlayerController({
   radius = 0.45,
   colliders = [],
   onMove,
-  nodeRef,
-  inputDirRef, // <- external analog stick dir {x,z} | null
-  children,
+  nodeRef,                 // NEW: group ref so a camera can follow
+  inputDirRef,             // NEW: external thumbstick direction (-1..1)
+  children,                // NEW: your avatar model
 }: {
   start?: Vec2;
   speed?: number;
   radius?: number;
   colliders?: Collider[];
   onMove?: (pos: Vec2) => void;
-  nodeRef?: React.RefObject<THREE.Object3D>;
-  inputDirRef?: React.RefObject<{ x: number; z: number } | null>;
-  children?: ReactNode;
+  nodeRef?: React.MutableRefObject<THREE.Object3D | null>;
+  inputDirRef?: React.MutableRefObject<Vec2 | null>;
+  children?: React.ReactNode;
 }) {
-  const localRef = useRef<THREE.Group>(null);
-  const groupRef = nodeRef ?? localRef;
-
-  const posRef = useRef<Vec2>({ ...start });
-  const velRef = useRef<Vec2>({ x: 0, z: 0 });
+  const [pos, setPos] = useState<Vec2>(start);
   const keys = useRef<Record<string, boolean>>({});
 
-  // initialize position once
   useEffect(() => {
-    posRef.current = { ...start };
-    velRef.current = { x: 0, z: 0 };
-    if (groupRef.current) groupRef.current.position.set(start.x, 0, start.z);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Keyboard
-  useEffect(() => {
-    const onDown = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k.startsWith("arrow")) e.preventDefault();
-      keys.current[k] = true;
-    };
-    const onUp = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k.startsWith("arrow")) e.preventDefault();
-      keys.current[k] = false;
-    };
-    window.addEventListener("keydown", onDown, { passive: false });
-    window.addEventListener("keyup", onUp, { passive: false });
+    const down = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = true);
+    const up   = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
     return () => {
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
     };
   }, []);
 
-  // Movement loop
   useEffect(() => {
     let last = performance.now();
     let raf = 0;
-
-    const ACCEL = 40; // smoothing
-    const DECEL = 35;
-
-    const step = () => {
+    const tick = () => {
       const now = performance.now();
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const dt = (now - last) / 1000;
       last = now;
 
-      // 1) read keyboard intent
-      let kx = 0, kz = 0;
-      const k = keys.current;
-      if (k["w"] || k["arrowup"])    kz -= 1;
-      if (k["s"] || k["arrowdown"])  kz += 1;
-      if (k["a"] || k["arrowleft"])  kx -= 1;
-      if (k["d"] || k["arrowright"]) kx += 1;
+      // --- gather input ---
+      let ix = 0, iz = 0;
 
-      // 2) merge with thumbstick (if present)
-      let ix = kx, iz = kz;
-      if (inputDirRef?.current) {
-        // if stick magnitude is stronger than tiny keyboard tap, use it
-        const sm = Math.hypot(inputDirRef.current.x, inputDirRef.current.z);
-        if (sm > 0.05) {
-          ix = inputDirRef.current.x;
-          iz = inputDirRef.current.z;
+      // thumbstick (if present) has priority when non-zero
+      const stick = inputDirRef?.current;
+      if (stick && (Math.abs(stick.x) > 0.001 || Math.abs(stick.z) > 0.001)) {
+        ix = stick.x;
+        iz = stick.z;
+      } else {
+        if (keys.current["w"] || keys.current["arrowup"]) iz -= 1;
+        if (keys.current["s"] || keys.current["arrowdown"]) iz += 1;
+        if (keys.current["a"] || keys.current["arrowleft"]) ix -= 1;
+        if (keys.current["d"] || keys.current["arrowright"]) ix += 1;
+      }
+
+      if (ix || iz) {
+        const mag = Math.hypot(ix, iz) || 1;
+        let vx = (ix / mag) * speed * dt;
+        let vz = (iz / mag) * speed * dt;
+
+        // move X then Z with collision
+        let nx = pos.x + vx;
+        let nz = pos.z;
+
+        if (intersects({ x: nx, z: nz }, radius, colliders)) nx = pos.x;
+
+        nz = pos.z + vz;
+        if (intersects({ x: nx, z: nz }, radius, colliders)) nz = pos.z;
+
+        if (nx !== pos.x || nz !== pos.z) {
+          const np = { x: nx, z: nz };
+          setPos(np);
+          onMove?.(np);
+          if (nodeRef?.current) nodeRef.current.position.set(np.x, 0, np.z);
         }
       }
 
-      // normalize
-      const mag = Math.hypot(ix, iz);
-      const dirX = mag ? ix / mag : 0;
-      const dirZ = mag ? iz / mag : 0;
-
-      // 3) smooth velocity
-      const targetVx = dirX * speed;
-      const targetVz = dirZ * speed;
-
-      velRef.current.x += (targetVx - velRef.current.x) * ACCEL * dt;
-      velRef.current.z += (targetVz - velRef.current.z) * ACCEL * dt;
-
-      if (!mag) {
-        velRef.current.x *= Math.exp(-DECEL * dt);
-        velRef.current.z *= Math.exp(-DECEL * dt);
-      }
-
-      // 4) integrate position
-      let nx = posRef.current.x + velRef.current.x * dt;
-      let nz = posRef.current.z + velRef.current.z * dt;
-      nx = +nx.toFixed(5);
-      nz = +nz.toFixed(5);
-
-      // 5) collision (AABB / circle)
-      if (intersects({ x: nx, z: nz }, radius, colliders)) {
-        nx = posRef.current.x;
-        nz = posRef.current.z;
-        velRef.current.x = 0;
-        velRef.current.z = 0;
-      }
-
-      // 6) apply
-      if (nx !== posRef.current.x || nz !== posRef.current.z) {
-        posRef.current.x = nx;
-        posRef.current.z = nz;
-        if (groupRef.current) groupRef.current.position.set(nx, 0, nz);
-        onMove?.({ x: nx, z: nz });
-      }
-
-      raf = requestAnimationFrame(step);
+      raf = requestAnimationFrame(tick);
     };
-
-    raf = requestAnimationFrame(step);
+    raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [speed, radius, colliders, onMove, inputDirRef, groupRef]);
+  }, [pos, speed, radius, colliders, onMove, inputDirRef, nodeRef]);
 
   return (
-    <group ref={groupRef as React.RefObject<THREE.Group>}>
-      {/* Fallback capsule if no avatar passed */}
-      {!children && (
+    <group
+      ref={nodeRef as any}
+      position={[pos.x, 0, pos.z]}
+    >
+      {/* Default fallback body if no children were passed */}
+      {children ?? (
         <mesh position={[0, 0.45, 0]} castShadow>
           <cylinderGeometry args={[radius, radius, 0.9, 12]} />
           <meshStandardMaterial color="#60a5fa" />
         </mesh>
       )}
-      {children}
     </group>
   );
 }
@@ -160,7 +111,6 @@ function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
       const dz = p.z - c.z;
       if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
     } else {
-      // box: axis-aligned
       const hw = c.w / 2;
       const hd = c.d / 2;
       const cx = clamp(p.x, c.x - hw, c.x + hw);
