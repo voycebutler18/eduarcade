@@ -7,11 +7,14 @@ import type { Collider } from "../campus/OutdoorWorld3D";
 /**
  * PlayerController (top-down XZ + Y jump/gravity)
  * - Keyboard (WASD / Arrows) + Thumbstick (inputDirRef {x,z})
- * - Collides in XZ against simple circle/box colliders
  * - Smooth facing (sticky) + manual yaw lock + ignoreInputYaw
- * - Live speed via speedRef (for sprint)
+ * - Collides in XZ (simple circle/box)
+ * - Live speed via speedRef (sprint)
  * - Jump & gravity on Y
- * - NEW: Coyote time + jump buffer for forgiving jumps
+ * - Coyote time + jump buffer
+ * - NEW (#21):
+ *    • Variable jump height (release to “short hop”)
+ *    • Air jumps (double-jump) via maxAirJumps
  */
 
 type Vec2 = { x: number; z: number };
@@ -19,25 +22,31 @@ type DirRef = React.MutableRefObject<{ x: number; z: number } | null>;
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
-  speed = 6,                                       // base walk speed
-  speedRef,                                        // live override (e.g., sprint)
+  speed = 6,
+  speedRef,
   radius = 0.45,
   colliders = [],
   nodeRef,
-  inputDirRef,                                     // optional thumbstick/virtual dir
+  inputDirRef,
   onMove,
   // Facing controls
   ignoreInputYaw = false,
   manualYawRef,
   // Jump/Gravity
   groundY = 0,
-  gravity = 30,                                    // units/sec^2 downward
-  jumpSpeed = 8,                                   // initial upward velocity
-  airControl = 0.65,                               // movement speed multiplier in air
-  jumpRef,                                         // set true to request a jump (one-shot)
-  // NEW: QoL jump params
-  coyoteMs = 120,                                   // allow jump this many ms after leaving ground
-  jumpBufferMs = 120,                               // remember jump press for this many ms
+  gravity = 30,
+  jumpSpeed = 8,
+  airControl = 0.65,
+  // QoL jump params
+  coyoteMs = 120,
+  jumpBufferMs = 120,
+  // NEW: variable height + air jumps
+  maxAirJumps = 1,           // 1 = classic double-jump
+  jumpCutMultiplier = 0.45,  // when jump is released while rising: vy *= this
+  fallGravityMultiplier = 1.4, // extra gravity when falling (snappier falls)
+  // Optional external jump signals (press/hold). If not provided, we read Space.
+  jumpRef,
+  jumpHeldRef,
   children,
 }: {
   start?: Vec2;
@@ -54,9 +63,13 @@ export default function PlayerController({
   gravity?: number;
   jumpSpeed?: number;
   airControl?: number;
-  jumpRef?: React.MutableRefObject<boolean | undefined>;
   coyoteMs?: number;
   jumpBufferMs?: number;
+  maxAirJumps?: number;
+  jumpCutMultiplier?: number;
+  fallGravityMultiplier?: number;
+  jumpRef?: React.MutableRefObject<boolean | undefined>;
+  jumpHeldRef?: React.MutableRefObject<boolean | undefined>;
   children?: React.ReactNode;
 }) {
   const localRef = useRef<Group>(null);
@@ -71,8 +84,12 @@ export default function PlayerController({
   const vy = useRef<number>(0);
   const grounded = useRef<boolean>(true);
 
+  // air jumps
+  const airJumpsUsed = useRef<number>(0);
+
   // keyboard state by e.code (layout-safe)
   const keys = useRef<Record<string, boolean>>({});
+  const prevSpace = useRef<boolean>(false); // for detecting Space edge
 
   // integrator
   const EPS = 1e-5;
@@ -83,7 +100,7 @@ export default function PlayerController({
   const yaw = useRef(0);
   const targetYaw = useRef<number | null>(null);
 
-  // NEW: jump timing helpers
+  // jump timing helpers
   const lastGroundedMs = useRef<number>(performance.now());
   const jumpBufferUntilMs = useRef<number>(0);
 
@@ -92,10 +109,10 @@ export default function PlayerController({
     const wanted = new Set([
       "KeyW", "KeyA", "KeyS", "KeyD",
       "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+      "Space", // read Space for built-in jump (if no external refs)
     ]);
 
     const down = (e: KeyboardEvent) => {
-      // ignore typing fields
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
 
@@ -174,6 +191,8 @@ export default function PlayerController({
     vy.current = 0;
     grounded.current = true;
 
+    airJumpsUsed.current = 0;
+
     if (ref.current) ref.current.position.set(start.x, y.current, start.z);
     placedOnce.current = true;
 
@@ -182,6 +201,7 @@ export default function PlayerController({
 
     lastGroundedMs.current = performance.now();
     jumpBufferUntilMs.current = 0;
+    prevSpace.current = false;
 
     onMove?.({ ...start });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -205,11 +225,22 @@ export default function PlayerController({
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
-      // 0) Consume a jump press into buffer window (press may come early)
+      // 0) Jump input edge detection:
+      //    Prefer external refs; else fall back to Space.
+      const spaceHeld = jumpHeldRef?.current ?? !!keys.current["Space"];
+      const spaceDownEdge =
+        jumpRef?.current === true ||
+        (!!keys.current["Space"] && !prevSpace.current);
+
+      // Consume external one-shot press into buffer window
       if (jumpRef && jumpRef.current) {
-        jumpBufferUntilMs.current = performance.now() + jumpBufferMs;
-        jumpRef.current = false; // consume edge
+        jumpRef.current = false;
       }
+
+      if (spaceDownEdge) {
+        jumpBufferUntilMs.current = performance.now() + jumpBufferMs;
+      }
+      prevSpace.current = !!keys.current["Space"];
 
       // 1) Read input (XZ)
       const dir = readInput();
@@ -227,11 +258,12 @@ export default function PlayerController({
         }
       }
 
-      // 2) Gravity integration
-      vy.current -= gravity * STEP;
+      // 2) Gravity integration (apply stronger gravity on fall)
+      const g = vy.current > 0 ? gravity : gravity * fallGravityMultiplier;
+      vy.current -= g * STEP;
       y.current += vy.current * STEP;
 
-      // 3) Ground resolution + coyote bookkeeping
+      // 3) Ground resolution + coyote bookkeeping + air-jump reset
       const wasGrounded = grounded.current;
       if (y.current <= groundY) {
         y.current = groundY;
@@ -240,23 +272,36 @@ export default function PlayerController({
       } else {
         grounded.current = false;
       }
-
       if (grounded.current) {
         lastGroundedMs.current = performance.now();
+        if (!wasGrounded) {
+          // landed — reset air jumps
+          airJumpsUsed.current = 0;
+        }
       }
 
-      // 4) Buffered jump & coyote logic
+      // 4) Buffered jump / coyote / air-jumps
       const now = performance.now();
       const withinBuffer = now <= jumpBufferUntilMs.current;
       const withinCoyote = (now - lastGroundedMs.current) <= coyoteMs;
 
-      // Trigger jump if either:
-      //  - we are on ground and have a buffered press
-      //  - we recently left ground (coyote) and have a buffered press
-      if (withinBuffer && (grounded.current || (!grounded.current && withinCoyote))) {
+      const canGroundJump = grounded.current && withinBuffer;
+      const canCoyoteJump = !grounded.current && withinCoyote && withinBuffer;
+      const canAirJump = !grounded.current && !withinCoyote && withinBuffer && (airJumpsUsed.current < maxAirJumps);
+
+      if (canGroundJump || canCoyoteJump || canAirJump) {
         vy.current = jumpSpeed;
+        y.current += vy.current * STEP * 0.5; // tiny lift to avoid re-grounding same step
         grounded.current = false;
-        jumpBufferUntilMs.current = 0; // consume buffer
+        jumpBufferUntilMs.current = 0;
+        if (canAirJump && !canGroundJump && !canCoyoteJump) {
+          airJumpsUsed.current += 1;
+        }
+      }
+
+      // 5) Variable jump height: if the button is released while rising, cut the velocity
+      if (!spaceHeld && vy.current > 0) {
+        vy.current *= jumpCutMultiplier;
       }
     }
 
