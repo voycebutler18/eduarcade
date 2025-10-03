@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+// src/features/player/PlayerController.tsx
+import { useEffect, useLayoutEffect, useRef } from "react";
+import * as THREE from "three";
 import { Collider } from "../campus/OutdoorWorld3D";
+
+/**
+ * Render-light player controller for XZ plane:
+ * - Keyboard (WASD/Arrows) + optional on-screen thumbstick via inputDirRef
+ * - No per-frame React state updates (prevents jitter)
+ * - Applies transforms directly to an Object3D (nodeRef) for smooth follow cam
+ * - Axis-separated collision against Box/Circle colliders
+ */
 
 type Vec2 = { x: number; z: number };
 
@@ -8,92 +18,142 @@ export default function PlayerController({
   speed = 6,
   radius = 0.45,
   colliders = [],
-  onMove,
-  nodeRef,                 // NEW: group ref so a camera can follow
-  inputDirRef,             // NEW: external thumbstick direction (-1..1)
-  children,                // NEW: your avatar model
+  nodeRef,
+  inputDirRef,
+  children,
 }: {
   start?: Vec2;
   speed?: number;
   radius?: number;
   colliders?: Collider[];
-  onMove?: (pos: Vec2) => void;
-  nodeRef?: React.MutableRefObject<THREE.Object3D | null>;
-  inputDirRef?: React.MutableRefObject<Vec2 | null>;
+  /** Group or Object3D that represents the player (used by FollowCam) */
+  nodeRef: React.MutableRefObject<THREE.Object3D | null>;
+  /** Optional: {x,z} direction vector from on-screen thumbstick in range [-1..1] */
+  inputDirRef?: React.MutableRefObject<{ x: number; z: number } | null>;
   children?: React.ReactNode;
 }) {
-  const [pos, setPos] = useState<Vec2>(start);
+  // Internal position (no React state → no rerenders)
+  const pos = useRef<Vec2>({ ...start });
+  const running = useRef(true);
   const keys = useRef<Record<string, boolean>>({});
+  const lastT = useRef<number>(performance.now());
 
+  // Place the node at start on mount
+  useLayoutEffect(() => {
+    pos.current = { ...start };
+    if (nodeRef?.current) {
+      nodeRef.current.position.set(start.x, 0, start.z);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keyboard handling (prevents page scroll on Arrow keys)
   useEffect(() => {
-    const down = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = true);
-    const up   = (e: KeyboardEvent) => (keys.current[e.key.toLowerCase()] = false);
-    window.addEventListener("keydown", down);
+    const down = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      keys.current[k] = true;
+      if (
+        k === "arrowup" ||
+        k === "arrowdown" ||
+        k === "arrowleft" ||
+        k === "arrowright" ||
+        k === " " // space
+      ) {
+        e.preventDefault();
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      keys.current[e.key.toLowerCase()] = false;
+    };
+    window.addEventListener("keydown", down, { passive: false });
     window.addEventListener("keyup", up);
     return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
+      window.removeEventListener("keydown", down as any);
+      window.removeEventListener("keyup", up as any);
     };
   }, []);
 
+  // RAF loop (no React state)
   useEffect(() => {
-    let last = performance.now();
+    running.current = true;
     let raf = 0;
+
     const tick = () => {
+      if (!running.current) return;
+
       const now = performance.now();
-      const dt = (now - last) / 1000;
-      last = now;
+      const dt = Math.min(0.05, (now - lastT.current) / 1000); // clamp big frame stalls
+      lastT.current = now;
 
-      // --- gather input ---
-      let ix = 0, iz = 0;
+      // Direction from keyboard
+      let dx = 0,
+        dz = 0;
+      const k = keys.current;
+      if (k["w"] || k["arrowup"]) dz -= 1;
+      if (k["s"] || k["arrowdown"]) dz += 1;
+      if (k["a"] || k["arrowleft"]) dx -= 1;
+      if (k["d"] || k["arrowright"]) dx += 1;
 
-      // thumbstick (if present) has priority when non-zero
-      const stick = inputDirRef?.current;
-      if (stick && (Math.abs(stick.x) > 0.001 || Math.abs(stick.z) > 0.001)) {
-        ix = stick.x;
-        iz = stick.z;
-      } else {
-        if (keys.current["w"] || keys.current["arrowup"]) iz -= 1;
-        if (keys.current["s"] || keys.current["arrowdown"]) iz += 1;
-        if (keys.current["a"] || keys.current["arrowleft"]) ix -= 1;
-        if (keys.current["d"] || keys.current["arrowright"]) ix += 1;
+      // Mix in thumbstick (if present)
+      if (inputDirRef?.current) {
+        dx += inputDirRef.current.x;
+        dz += inputDirRef.current.z;
       }
 
-      if (ix || iz) {
-        const mag = Math.hypot(ix, iz) || 1;
-        let vx = (ix / mag) * speed * dt;
-        let vz = (iz / mag) * speed * dt;
+      // Normalize
+      const mag = Math.hypot(dx, dz);
+      if (mag > 0.0001) {
+        dx /= mag;
+        dz /= mag;
 
-        // move X then Z with collision
-        let nx = pos.x + vx;
-        let nz = pos.z;
+        const stepX = dx * speed * dt;
+        const stepZ = dz * speed * dt;
 
-        if (intersects({ x: nx, z: nz }, radius, colliders)) nx = pos.x;
+        let nx = pos.current.x + stepX;
+        let nz = pos.current.z;
 
-        nz = pos.z + vz;
-        if (intersects({ x: nx, z: nz }, radius, colliders)) nz = pos.z;
+        // collide X
+        if (intersects(nx, nz, radius, colliders)) {
+          nx = pos.current.x;
+        }
 
-        if (nx !== pos.x || nz !== pos.z) {
-          const np = { x: nx, z: nz };
-          setPos(np);
-          onMove?.(np);
-          if (nodeRef?.current) nodeRef.current.position.set(np.x, 0, np.z);
+        // then Z
+        nz = pos.current.z + stepZ;
+        if (intersects(nx, nz, radius, colliders)) {
+          nz = pos.current.z;
+        }
+
+        // Apply
+        if (nx !== pos.current.x || nz !== pos.current.z) {
+          pos.current.x = nx;
+          pos.current.z = nz;
+          if (nodeRef?.current) {
+            nodeRef.current.position.set(nx, 0, nz);
+            // face movement direction (optional)
+            if (mag > 0.2) {
+              const yaw = Math.atan2(dx, dz); // XZ plane
+              nodeRef.current.rotation.y = yaw;
+            }
+          }
         }
       }
 
       raf = requestAnimationFrame(tick);
     };
+
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [pos, speed, radius, colliders, onMove, inputDirRef, nodeRef]);
+    return () => {
+      running.current = false;
+      cancelAnimationFrame(raf);
+    };
+  }, [speed, radius, colliders, nodeRef, inputDirRef]);
 
   return (
-    <group
-      ref={nodeRef as any}
-      position={[pos.x, 0, pos.z]}
-    >
-      {/* Default fallback body if no children were passed */}
-      {children ?? (
+    <group ref={nodeRef as any} position={[start.x, 0, start.z]}>
+      {/* Your avatar (from parent) or fallback capsule */}
+      {children ? (
+        children
+      ) : (
         <mesh position={[0, 0.45, 0]} castShadow>
           <cylinderGeometry args={[radius, radius, 0.9, 12]} />
           <meshStandardMaterial color="#60a5fa" />
@@ -104,24 +164,27 @@ export default function PlayerController({
 }
 
 /* -------- collision helpers -------- */
-function intersects(p: { x: number; z: number }, r: number, cs: Collider[]) {
+
+function intersects(px: number, pz: number, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
-      const dx = p.x - c.x;
-      const dz = p.z - c.z;
+      const dx = px - c.x;
+      const dz = pz - c.z;
       if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
     } else {
+      // AABB box
       const hw = c.w / 2;
       const hd = c.d / 2;
-      const cx = clamp(p.x, c.x - hw, c.x + hw);
-      const cz = clamp(p.z, c.z - hd, c.z + hd);
-      const dx = p.x - cx;
-      const dz = p.z - cz;
+      const cx = clamp(px, c.x - hw, c.x + hw);
+      const cz = clamp(pz, c.z - hd, c.z + hd);
+      const dx = px - cx;
+      const dz = pz - cz;
       if (dx * dx + dz * dz < r * r) return true;
     }
   }
   return false;
 }
+
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
