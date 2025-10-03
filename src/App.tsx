@@ -168,11 +168,11 @@ export default function App() {
   const stickDirRef = useRef<{ x: number; z: number } | null>(null);
   const manualYawRef = useRef<number | null>(null);   // freeze facing when set
   const lastAngleRef = useRef<number | null>(null);   // remember last stick angle
-  const speedRef = useRef<number>(6);                 // for SprintModifier
-  const jumpRef = useRef<boolean>(false);             // edge (press)
-  const jumpHeldRef = useRef<boolean>(false);         // held state (for variable height)
 
-  const [showStick] = useState(true);
+  // (still here if you later re-enable sprint/jump physics controller)
+  const speedRef = useRef<number>(6);
+  const jumpRef = useRef<boolean>(false);
+  const jumpHeldRef = useRef<boolean>(false);
 
   function enterSchool() { setScene("campus"); }
   function enterPlot(_plotId: string) { go("build"); }
@@ -204,7 +204,7 @@ export default function App() {
           >
             {/* Raise the rig so feet aren't inside ground */}
             <group position={[0, 0.4, 0]} scale={0.95}>
-              <HeroRig3D preset={preset} moveAmount={0} />
+              <HeroRig3D preset={preset} />
             </group>
           </GlideController>
 
@@ -292,7 +292,7 @@ export default function App() {
                   stickDirRef.current = dir;
                   lastAngleRef.current = Math.atan2(dir.x, dir.z);
                 } else {
-                  // released: stop movement and freeze yaw to last angle
+                  // released: stop input and freeze yaw to last angle
                   stickDirRef.current = { x: 0, z: 0 };
                   if (lastAngleRef.current != null) {
                     manualYawRef.current = lastAngleRef.current;
@@ -303,12 +303,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Sprint & mobile jump controls only matter during Play */}
+        {/* Sprint & mobile jump controls (kept for future physics controller) */}
         {tab === "play" && (
           <>
-            {/* Shift to sprint: writes into speedRef.current */}
             <SprintModifier speedRef={speedRef} baseSpeed={6} sprintSpeed={10} />
-            {/* Big touch jump button (sets jumpRef/jumpHeldRef) */}
             <MobileJumpButton jumpRef={jumpRef} jumpHeldRef={jumpHeldRef} />
           </>
         )}
