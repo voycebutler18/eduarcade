@@ -102,9 +102,19 @@ export default function PlayerController({
     const down = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
-      if (wanted.has(e.code)) { e.preventDefault(); keys.current[e.code] = true; }
+      if (wanted.has(e.code)) { 
+        e.preventDefault(); 
+        keys.current[e.code] = true;
+        console.log("KEY DOWN:", e.code); // DEBUG
+      }
     };
-    const up = (e: KeyboardEvent) => { if (wanted.has(e.code)) { e.preventDefault(); keys.current[e.code] = false; } };
+    const up = (e: KeyboardEvent) => { 
+      if (wanted.has(e.code)) { 
+        e.preventDefault(); 
+        keys.current[e.code] = false; 
+        console.log("KEY UP:", e.code); // DEBUG
+      } 
+    };
     const clear = () => { for (const k of wanted) keys.current[k] = false; };
     window.addEventListener("keydown", down, { passive:false });
     window.addEventListener("keyup", up, { passive:false });
@@ -186,6 +196,7 @@ export default function PlayerController({
 
   /* ---------- mount ---------- */
   useEffect(() => {
+    console.log("PlayerController MOUNTED at position:", start); // DEBUG
     pos.current = { ...start };
     y.current = groundY;
     vy.current = 0;
@@ -229,16 +240,25 @@ export default function PlayerController({
 
       // movement
       const dir = readInput();
+      
+      // DEBUG: Log input every frame when moving
+      if (dir.x !== 0 || dir.z !== 0) {
+        console.log("DIRECTION:", dir, "| POS:", pos.current, "| SPEED:", currentSpeed);
+      }
+      
       if (dir.x !== 0 || dir.z !== 0) {
         if (!ignoreInputYaw && !(manualYawRef && manualYawRef.current != null)) {
           targetYaw.current = Math.atan2(dir.x, dir.z); // face stick/keys while moving
         }
         const dx = dir.x * currentSpeed * STEP;
         const dz = dir.z * currentSpeed * STEP;
+        console.log("DELTA:", { dx, dz }); // DEBUG
         const next = tryMove(pos.current, dx, dz);
+        console.log("AFTER tryMove:", next); // DEBUG
         if (Math.abs(next.x - pos.current.x) > EPS || Math.abs(next.z - pos.current.z) > EPS) {
           pos.current = next;
           moved = true;
+          console.log("MOVED = true"); // DEBUG
         }
       }
 
