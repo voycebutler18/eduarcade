@@ -25,12 +25,12 @@ import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D"
 import PlayerController from "./features/player/PlayerController";
 import FollowCam from "./features/player/FollowCam";
 
-// On-screen thumbstick
+// Controls & helpers
 import Thumbstick from "./features/controls/Thumbstick";
-// NEW: ensure keyboard focus hits the canvas
 import EnsureCanvasFocus from "./features/controls/EnsureCanvasFocus";
+import SprintModifier from "./features/controls/SprintModifier";
+import MobileJumpButton from "./features/controls/MobileJumpButton";
 
-// Optional campus interior (safe fallback)
 let Campus3D: any;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -147,7 +147,7 @@ export default function App() {
     if (!cleared) {
       setQuizOpen(true);
       return;
-      }
+    }
     setQueueing(true);
     setTimeout(() => {
       setQueueing(false);
@@ -166,16 +166,17 @@ export default function App() {
   // refs for thumbstick + player + movement state
   const playerRef = useRef<THREE.Object3D | null>(null);
   const stickDirRef = useRef<{ x: number; z: number } | null>(null);
+  const manualYawRef = useRef<number | null>(null);   // freeze facing when set
+  const lastAngleRef = useRef<number | null>(null);   // remember last stick angle
+  const speedRef = useRef<number>(6);                 // for SprintModifier
+  const jumpRef = useRef<boolean>(false);             // edge (press)
+  const jumpHeldRef = useRef<boolean>(false);         // held state (for variable height)
+
   const [moving, setMoving] = useState(false);
-  const [showStick] = useState(true); // toggle if you want later
+  const [showStick] = useState(true);
 
-  function enterSchool() {
-    setScene("campus");
-  }
-  function enterPlot(_plotId: string) {
-    go("build");
-  }
-
+  function enterSchool() { setScene("campus"); }
+  function enterPlot(_plotId: string) { go("build"); }
   function handleStartLesson(_classId: string) {}
   function handleEndLesson(_classId: string) {}
 
@@ -196,26 +197,40 @@ export default function App() {
             start={{ x: 0, z: 8 }}
             colliders={outdoorColliders}
             speed={6}
+            speedRef={speedRef}
             radius={0.45}
             nodeRef={playerRef}
-            inputDirRef={stickDirRef} // thumbstick/virtual dir & keyboard merged inside controller
+            inputDirRef={stickDirRef}
+            manualYawRef={manualYawRef}
+            // Jump setup from #21
+            groundY={0}
+            gravity={30}
+            jumpSpeed={8}
+            airControl={0.7}
+            coyoteMs={120}
+            jumpBufferMs={140}
+            maxAirJumps={1}
+            jumpCutMultiplier={0.45}
+            fallGravityMultiplier={1.4}
+            jumpRef={jumpRef}
+            jumpHeldRef={jumpHeldRef}
             onMove={() => {
-              // derive "moving" from the last input vector (works for keys & stick)
+              // derive "moving" from last input vector (works for keys & stick)
               const d = stickDirRef.current ?? { x: 0, z: 0 };
               setMoving(Math.abs(d.x) + Math.abs(d.z) > 0.001);
             }}
           >
-            <group position={[0, 0, 0]} scale={0.95}>
+            {/* Raise the rig so feet aren't inside ground */}
+            <group position={[0, 0.4, 0]} scale={0.95}>
               <HeroRig3D preset={preset} moveAmount={moving ? 1 : 0.25} />
             </group>
           </PlayerController>
 
-          {/* Follow camera (relative to player facing) */}
+          {/* Follow camera */}
           <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
         </>
       );
     }
-    // campus interior (placeholder unless you hooked it up)
     return <Campus3D onEnter={(cid: string) => console.log("enter class", cid)} />;
   }
 
@@ -280,19 +295,40 @@ export default function App() {
 
           {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
 
-          {/* Make sure the canvas grabs keyboard focus on click/tap */}
+          {/* Ensure the canvas grabs keyboard focus */}
           <EnsureCanvasFocus />
         </Canvas>
 
-        {/* On-screen thumbstick overlay (fixed, above canvas) */}
+        {/* Thumbstick overlay (with facing freeze on release) */}
         {tab === "play" && (
           <div style={{ position: "fixed", left: 0, bottom: 0, zIndex: 60 }}>
             <Thumbstick
-              onChange={(v) => {
-                stickDirRef.current = v ?? { x: 0, z: 0 };
+              onChange={(dir) => {
+                if (dir) {
+                  // moving: let input control yaw and remember the last angle
+                  manualYawRef.current = null;
+                  stickDirRef.current = dir;
+                  lastAngleRef.current = Math.atan2(dir.x, dir.z);
+                } else {
+                  // released: stop movement and freeze yaw to last angle
+                  stickDirRef.current = { x: 0, z: 0 };
+                  if (lastAngleRef.current != null) {
+                    manualYawRef.current = lastAngleRef.current;
+                  }
+                }
               }}
             />
           </div>
+        )}
+
+        {/* Sprint & mobile jump controls only matter during Play */}
+        {tab === "play" && (
+          <>
+            {/* Shift to sprint: writes into speedRef.current */}
+            <SprintModifier speedRef={speedRef} baseSpeed={6} sprintSpeed={10} />
+            {/* Big touch jump button (sets jumpRef/jumpHeldRef) */}
+            <MobileJumpButton jumpRef={jumpRef} jumpHeldRef={jumpHeldRef} />
+          </>
         )}
 
         <aside className="panel">
