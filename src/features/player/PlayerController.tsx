@@ -1,18 +1,26 @@
 // src/features/player/PlayerController.tsx
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Group, Object3D } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { Collider } from "../campus/OutdoorWorld3D";
 
+/**
+ * Jitter-free, fixed-timestep top-down controller (XZ plane)
+ * - Keyboard (WASD / Arrow keys)
+ * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
+ * - Only updates Object3D when position actually changes (epsilon)
+ */
+
 type Vec2 = { x: number; z: number };
+type DirRef = React.MutableRefObject<{ x: number; z: number } | null>;
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
   speed = 6,
   radius = 0.45,
   colliders = [],
-  nodeRef,                 // external ref used by FollowCam
-  inputDirRef,             // OPTIONAL: pass a ref with {x,z} ∈ [-1,1] from a thumbstick
+  nodeRef,
+  inputDirRef,         // <- optional thumbstick direction
   onMove,
   children,
 }: {
@@ -21,115 +29,126 @@ export default function PlayerController({
   radius?: number;
   colliders?: Collider[];
   nodeRef?: React.MutableRefObject<Object3D | null>;
-  inputDirRef?: React.MutableRefObject<Vec2 | null>;
+  inputDirRef?: DirRef;
   onMove?: (pos: Vec2) => void;
   children?: React.ReactNode;
 }) {
-  // The moving group
   const localRef = useRef<Group>(null);
-  const ref = (nodeRef as React.MutableRefObject<Group | null>) ?? localRef;
+  const ref = nodeRef ?? localRef;
 
-  // position kept in a ref (no React state = no re-renders)
   const pos = useRef<Vec2>({ ...start });
+  const placedOnce = useRef(false);
   const keys = useRef<Record<string, boolean>>({});
 
-  // ---------------- Keyboard ----------------
+  const EPS = 1e-5;
+  const STEP = 1 / 120; // fixed integration step (seconds)
+  const acc = useRef(0);
+
+  /* ---------------- keyboard ---------------- */
+
   useEffect(() => {
-    const watch = new Set(["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"]);
-
-    const onDown = (e: KeyboardEvent) => {
+    const wanted = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
+    const down = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      if (watch.has(k)) e.preventDefault();
-
+      if (wanted.has(k)) e.preventDefault();
+      // ignore typing fields
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
-
       keys.current[k] = true;
     };
-    const onUp = (e: KeyboardEvent) => {
+    const up = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      if (watch.has(k)) e.preventDefault();
+      if (wanted.has(k)) e.preventDefault();
       keys.current[k] = false;
     };
-
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
+    window.addEventListener("keydown", down, { passive: false });
+    window.addEventListener("keyup", up, { passive: false });
     return () => {
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("keydown", down as any);
+      window.removeEventListener("keyup", up as any);
     };
   }, []);
 
-  // ---------------- Initial placement ----------------
+  /* ---------------- helpers ---------------- */
+
+  function readInput(): Vec2 {
+    // keyboard
+    let x = 0, z = 0;
+    const k = keys.current;
+    if (k["w"] || k["arrowup"]) z -= 1;
+    if (k["s"] || k["arrowdown"]) z += 1;
+    if (k["a"] || k["arrowleft"]) x -= 1;
+    if (k["d"] || k["arrowright"]) x += 1;
+
+    // stick (override keyboard if present)
+    const s = inputDirRef?.current;
+    if (s) {
+      x = s.x;
+      z = s.z;
+    }
+
+    const m = Math.hypot(x, z);
+    return m > 0 ? { x: x / m, z: z / m } : { x: 0, z: 0 };
+  }
+
+  function tryMove(cur: Vec2, dx: number, dz: number): Vec2 {
+    let nx = cur.x + dx;
+    let nz = cur.z;
+    if (intersects(nx, nz, radius, colliders)) nx = cur.x;
+    nz = cur.z + dz;
+    if (intersects(nx, nz, radius, colliders)) nz = cur.z;
+    return { x: nx, z: nz };
+  }
+
+  /* ---------------- mount ---------------- */
+
   useEffect(() => {
-    if (ref.current) ref.current.position.set(start.x, 0, start.z);
     pos.current = { ...start };
+    if (ref.current) ref.current.position.set(start.x, 0, start.z);
+    placedOnce.current = true;
     onMove?.({ ...start });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------- Per-frame update ----------------
-  useFrame((_state, rawDt) => {
-    const g = ref.current;
-    if (!g) return;
+  /* ---------------- main loop (fixed timestep) ---------------- */
 
-    // Clamp dt to avoid big jumps (e.g., tab swaps)
-    const dt = Math.min(0.05, Math.max(0, rawDt)); // <= 50 ms
+  useFrame((_state, dt) => {
+    // place once if object just appeared
+    if (!placedOnce.current && ref.current) {
+      ref.current.position.set(pos.current.x, 0, pos.current.z);
+      placedOnce.current = true;
+    }
 
-    // 1) Gather input (keyboard)
-    let ix = 0, iz = 0;
-    const k = keys.current;
-    if (k["w"] || k["arrowup"])    iz -= 1;
-    if (k["s"] || k["arrowdown"])  iz += 1;
-    if (k["a"] || k["arrowleft"])  ix -= 1;
-    if (k["d"] || k["arrowright"]) ix += 1;
+    // clamp dt and accumulate
+    acc.current += Math.min(0.05, Math.max(0, dt));
 
-    // 2) Optional thumbstick overrides when active
-    if (inputDirRef && inputDirRef.current) {
-      const stick = inputDirRef.current;
-      const sMag = Math.hypot(stick.x, stick.z);
-      if (sMag > 0.02) { // small deadzone
-        ix = stick.x;
-        iz = stick.z;
+    let moved = false;
+    while (acc.current >= STEP) {
+      acc.current -= STEP;
+
+      const dir = readInput();
+      if (dir.x !== 0 || dir.z !== 0) {
+        const dx = dir.x * speed * STEP;
+        const dz = dir.z * speed * STEP;
+        const next = tryMove(pos.current, dx, dz);
+
+        if (Math.abs(next.x - pos.current.x) > EPS || Math.abs(next.z - pos.current.z) > EPS) {
+          pos.current = next;
+          moved = true;
+        }
       }
     }
 
-    // 3) Normalize input
-    const mag = Math.hypot(ix, iz);
-    if (mag < 1e-6) {
-      // No intent -> do nothing (critically, do NOT rewrite position)
-      return;
-    }
-    ix /= mag;
-    iz /= mag;
-
-    // 4) Integrate desired move
-    const stepX = ix * speed * dt;
-    const stepZ = iz * speed * dt;
-
-    let nx = pos.current.x + stepX;
-    let nz = pos.current.z;
-
-    if (intersects(nx, nz, radius, colliders)) {
-      nx = pos.current.x; // block X
-    }
-    nz = pos.current.z + stepZ;
-    if (intersects(nx, nz, radius, colliders)) {
-      nz = pos.current.z; // block Z
-    }
-
-    // 5) Only write when something actually changed by epsilon
-    const EPS = 1e-6;
-    if (Math.abs(nx - pos.current.x) > EPS || Math.abs(nz - pos.current.z) > EPS) {
-      pos.current.x = nx;
-      pos.current.z = nz;
-      g.position.set(nx, 0, nz);
-      onMove?.({ x: nx, z: nz });
+    if (moved && ref.current) {
+      ref.current.position.set(pos.current.x, 0, pos.current.z);
+      onMove?.({ ...pos.current });
     }
   });
 
+  /* ---------------- render ---------------- */
+
   return (
-    <group ref={ref}>
+    <group ref={ref as React.MutableRefObject<Group | null>}>
       {children ?? (
         <mesh position={[0, 0.45, 0]} castShadow>
           <cylinderGeometry args={[radius, radius, 0.9, 12]} />
@@ -140,20 +159,18 @@ export default function PlayerController({
   );
 }
 
-/* ---------------- Collision helpers ---------------- */
+/* ------------- collision ------------- */
+
 function intersects(x: number, z: number, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
-      const dx = x - c.x;
-      const dz = z - c.z;
+      const dx = x - c.x, dz = z - c.z;
       if (dx * dx + dz * dz < (r + c.r) * (r + c.r)) return true;
     } else {
-      const hw = c.w / 2;
-      const hd = c.d / 2;
+      const hw = c.w / 2, hd = c.d / 2;
       const cx = clamp(x, c.x - hw, c.x + hw);
       const cz = clamp(z, c.z - hd, c.z + hd);
-      const dx = x - cx;
-      const dz = z - cz;
+      const dx = x - cx, dz = z - cz;
       if (dx * dx + dz * dz < r * r) return true;
     }
   }
