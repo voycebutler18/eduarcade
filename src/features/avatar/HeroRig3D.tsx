@@ -10,12 +10,14 @@ import { AvatarPreset } from "../../state/avatar";
  * - Capsule limbs + rounded torso
  * - Subtle idle motion
  * - Hair styles align exactly with UI labels
+ * - NEW: moveAmount prop scales idle/walk sway (0 = still, 1 = default)
  */
 
 export default function HeroRig3D({
   preset,
+  moveAmount = 1, // <— NEW: externally control animation intensity
   ...props
-}: GroupProps & { preset: AvatarPreset | null }) {
+}: GroupProps & { preset: AvatarPreset | null; moveAmount?: number }) {
   const root = useRef<THREE.Group>(null!);
   const gTorso = useRef<THREE.Group>(null!);
   const gHead = useRef<THREE.Group>(null!);
@@ -34,24 +36,26 @@ export default function HeroRig3D({
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
-    // DON'T rotate root - it conflicts with PlayerController
+    const amp = moveAmount; // scale all sways by moveAmount
+
+    // DON'T rotate root - PlayerController owns facing
     // root.current.rotation.y = Math.sin(t * 1.4) * 0.05;
-    
-    // Only animate child parts
+
+    // Only animate child parts (multiplied by amp)
     if (gTorso.current) {
-      gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * 0.012;
+      gTorso.current.position.y = 0.9 + Math.sin(t * 2.1) * (0.012 * amp);
     }
     if (gLA.current) {
-      gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * 0.06;
+      gLA.current.rotation.z = 0.18 + Math.sin(t * 2.0) * (0.06 * amp);
     }
     if (gRA.current) {
-      gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * 0.06;
+      gRA.current.rotation.z = -0.18 + Math.sin(t * 2.0 + Math.PI) * (0.06 * amp);
     }
     if (gLL.current) {
-      gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * 0.04;
+      gLL.current.rotation.x = Math.sin(t * 1.6 + Math.PI / 8) * (0.04 * amp);
     }
     if (gRL.current) {
-      gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * 0.04;
+      gRL.current.rotation.x = Math.sin(t * 1.6 - Math.PI / 8) * (0.04 * amp);
     }
   });
 
