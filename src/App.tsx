@@ -28,6 +28,7 @@ import FollowCam from "./features/player/FollowCam";
 // Optional campus interior (safe fallback)
 let Campus3D: any;
 try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   Campus3D = require("./features/campus/Campus3D").default;
 } catch {
   Campus3D = function CampusPlaceholder() {
@@ -195,7 +196,7 @@ export default function App() {
             </group>
           </PlayerController>
 
-          {/* SAFE follow cam (uses ref, null-safe) */}
+          {/* Follow camera */}
           <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
         </>
       );
