@@ -25,6 +25,9 @@ import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D"
 import PlayerController from "./features/player/PlayerController";
 import FollowCam from "./features/player/FollowCam";
 
+// NEW: on-screen thumbstick
+import Thumbstick from "./features/controls/Thumbstick";
+
 // Optional campus interior (safe fallback)
 let Campus3D: any;
 try {
@@ -158,6 +161,11 @@ export default function App() {
   const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
   const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
 
+  // NEW: refs for thumbstick + player group (for follow cam)
+  const playerRef = useRef<THREE.Object3D | null>(null);
+  const stickDirRef = useRef<{ x: number; z: number } | null>(null);
+  const [showStick] = useState(true); // toggle if you want later
+
   function enterSchool() {
     setScene("campus");
   }
@@ -170,9 +178,6 @@ export default function App() {
 
   // Play scene (Outdoor vs Campus)
   function PlayScene() {
-    // Ref that both the controller (mover) and FollowCam will use
-    const playerRef = useRef<THREE.Object3D>(null);
-
     if (scene === "outdoor") {
       return (
         <>
@@ -190,6 +195,7 @@ export default function App() {
             speed={6}
             radius={0.45}
             nodeRef={playerRef}
+            inputDirRef={stickDirRef}  // << thumbstick vector
           >
             <group position={[0, 0, 0]} scale={0.95}>
               <HeroRig3D preset={preset} />
@@ -266,6 +272,13 @@ export default function App() {
 
           {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
         </Canvas>
+
+        {/* NEW: on-screen thumbstick overlay (fixed, above canvas) */}
+        {tab === "play" && showStick && (
+          <div style={{ position: "fixed", left: 0, bottom: 0, zIndex: 60 }}>
+            <Thumbstick onChange={(v) => { stickDirRef.current = v; }} />
+          </div>
+        )}
 
         <aside className="panel">
           {tab === "play" && (
