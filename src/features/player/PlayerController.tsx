@@ -1,5 +1,4 @@
-// src/features/player/PlayerController.tsx
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Group, Object3D } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { Collider } from "../campus/OutdoorWorld3D";
@@ -8,7 +7,8 @@ import type { Collider } from "../campus/OutdoorWorld3D";
  * Jitter-free, fixed-timestep top-down controller (XZ plane)
  * - Keyboard (WASD / Arrow keys)
  * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
- * - Only updates Object3D when position actually changes (epsilon)
+ * - Only updates Object3D when position or yaw actually changes (epsilon)
+ * - NEW: Auto-rotate to face movement direction
  */
 
 type Vec2 = { x: number; z: number };
@@ -20,7 +20,7 @@ export default function PlayerController({
   radius = 0.45,
   colliders = [],
   nodeRef,
-  inputDirRef,         // <- optional thumbstick direction
+  inputDirRef, // <- optional thumbstick direction
   onMove,
   children,
 }: {
@@ -43,6 +43,9 @@ export default function PlayerController({
   const EPS = 1e-5;
   const STEP = 1 / 120; // fixed integration step (seconds)
   const acc = useRef(0);
+
+  // track facing yaw; only update when moving
+  const pendingYaw = useRef<number | null>(null);
 
   /* ---------------- keyboard ---------------- */
 
@@ -127,11 +130,16 @@ export default function PlayerController({
     acc.current += Math.min(0.05, Math.max(0, dt));
 
     let moved = false;
+    pendingYaw.current = null; // reset each frame; set when we have input
+
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
       const dir = readInput();
       if (dir.x !== 0 || dir.z !== 0) {
+        // remember facing for this step
+        pendingYaw.current = Math.atan2(dir.x, dir.z);
+
         const dx = dir.x * speed * STEP;
         const dz = dir.z * speed * STEP;
         const next = tryMove(pos.current, dx, dz);
@@ -143,9 +151,15 @@ export default function PlayerController({
       }
     }
 
-    if (moved && ref.current) {
-      ref.current.position.set(pos.current.x, 0, pos.current.z);
-      onMove?.({ ...pos.current });
+    if (ref.current) {
+      if (moved) {
+        ref.current.position.set(pos.current.x, 0, pos.current.z);
+        onMove?.({ ...pos.current });
+      }
+      // apply facing if we had non-zero input this frame
+      if (pendingYaw.current !== null) {
+        ref.current.rotation.y = pendingYaw.current!;
+      }
     }
   });
 
