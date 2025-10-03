@@ -216,7 +216,7 @@ export default function App() {
           >
             {/* Raise the rig so feet aren't inside ground */}
             <group position={[0, 0.4, 0]} scale={0.95}>
-              <HeroRig3D preset={preset} moveAmount={0.5} />
+              <HeroRig3D preset={preset} moveAmount={0} />
             </group>
           </PlayerController>
 
