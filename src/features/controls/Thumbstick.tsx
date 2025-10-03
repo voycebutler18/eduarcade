@@ -1,103 +1,148 @@
-import React, { useRef, useState, useEffect } from "react";
+// src/features/controls/Thumbstick.tsx
+import React, { useEffect, useRef, useState } from "react";
 
-type Vec2 = { x: number; z: number };
+type Vec = { x: number; z: number };
 
 export default function Thumbstick({
-  onChange,
   size = 120,
-  deadzone = 0.08,
-  className = "",
+  knob = 56,
+  dead = 0.08,
+  onChange,
 }: {
-  onChange: (dir: Vec2) => void;     // normalized -1..1
   size?: number;
-  deadzone?: number;
-  className?: string;
+  knob?: number;
+  dead?: number; // 0..1
+  onChange?: (v: Vec | null) => void;
 }) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [active, setActive] = useState(false);
-  const [knob, setKnob] = useState({ x: 0, y: 0 }); // px offset
+  const padRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 }); // -1..1 in pad space
 
-  // helper: set direction from a pointer event
-  function updateFromEvent(e: PointerEvent | React.PointerEvent) {
-    const el = wrapRef.current;
+  // Emit vector in XZ plane (x, z)
+  useEffect(() => {
+    const mag = Math.hypot(pos.x, pos.y);
+    if (!dragging || mag < dead) {
+      onChange?.(null);
+      return;
+    }
+    const nx = pos.x / (mag || 1);
+    const ny = pos.y / (mag || 1);
+    // screen-space y+ is down; convert to forward(-z)
+    onChange?.({ x: nx, z: -ny });
+  }, [pos, dragging, dead, onChange]);
+
+  function handleStart(clientX: number, clientY: number) {
+    setDragging(true);
+    update(clientX, clientY);
+  }
+
+  function handleMove(clientX: number, clientY: number) {
+    if (!dragging) return;
+    update(clientX, clientY);
+  }
+
+  function handleEnd() {
+    setDragging(false);
+    setPos({ x: 0, y: 0 });
+    onChange?.(null);
+  }
+
+  function update(clientX: number, clientY: number) {
+    const el = padRef.current;
     if (!el) return;
-
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
 
-    const dx = (("clientX" in e ? e.clientX : 0) - cx) / (rect.width / 2);
-    const dy = (("clientY" in e ? e.clientY : 0) - cy) / (rect.height / 2);
-
-    // clamp circle radius 1
-    const mag = Math.hypot(dx, dy) || 1;
-    const nx = Math.max(-1, Math.min(1, dx / Math.max(1, mag)));
-    const ny = Math.max(-1, Math.min(1, dy / Math.max(1, mag)));
-
-    // apply deadzone
-    const dm = Math.hypot(nx, ny);
-    const gx = dm < deadzone ? 0 : nx;
-    const gy = dm < deadzone ? 0 : ny;
-
-    // move knob (visual)
-    const r = (rect.width / 2) * 0.45;
-    setKnob({ x: gx * r, y: gy * r });
-
-    // convert screen Y (down positive) to world Z (forward negative)
-    onChange({ x: gx, z: -gy });
+    let dx = (clientX - cx) / (rect.width / 2);  // -1..1
+    let dy = (clientY - cy) / (rect.height / 2); // -1..1
+    const mag = Math.hypot(dx, dy);
+    if (mag > 1) {
+      dx /= mag;
+      dy /= mag;
+    }
+    setPos({ x: dx, y: dy });
   }
 
-  function endStick() {
-    setActive(false);
-    setKnob({ x: 0, y: 0 });
-    onChange({ x: 0, z: 0 });
-  }
-
+  // mouse
   useEffect(() => {
-    const move = (ev: PointerEvent) => active && updateFromEvent(ev);
-    const up = () => active && endStick();
-    window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", up, { passive: false });
-    window.addEventListener("pointercancel", up, { passive: false });
+    function onMove(e: MouseEvent) {
+      if (!dragging) return;
+      e.preventDefault();
+      handleMove(e.clientX, e.clientY);
+    }
+    function onUp() {
+      if (!dragging) return;
+      handleEnd();
+    }
+    window.addEventListener("mousemove", onMove, { passive: false });
+    window.addEventListener("mouseup", onUp);
     return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
     };
-  }, [active]);
+  }, [dragging]);
+
+  // touch
+  useEffect(() => {
+    function onMove(e: TouchEvent) {
+      if (!dragging) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      if (!t) return;
+      handleMove(t.clientX, t.clientY);
+    }
+    function onEnd() {
+      if (!dragging) return;
+      handleEnd();
+    }
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+    window.addEventListener("touchcancel", onEnd);
+    return () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onEnd);
+    };
+  }, [dragging]);
+
+  const pad = size;
+  const k = knob;
+  const knobX = (pad - k) / 2 * (pos.x);
+  const knobY = (pad - k) / 2 * (pos.y);
 
   return (
     <div
-      ref={wrapRef}
-      className={`thumbstick ${className}`}
-      style={{
-        position: "absolute",
-        left: 16,
-        bottom: 16,
-        width: size,
-        height: size,
-        borderRadius: size,
-        background: "rgba(255,255,255,.06)",
-        border: "1px solid rgba(255,255,255,.12)",
-        touchAction: "none",
+      ref={padRef}
+      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (t) handleStart(t.clientX, t.clientY);
       }}
-      onPointerDown={(e) => {
-        setActive(true);
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        updateFromEvent(e);
+      style={{
+        width: pad,
+        height: pad,
+        margin: 10,
+        borderRadius: pad,
+        border: "1px solid rgba(255,255,255,.18)",
+        background: "rgba(0,0,0,.35)",
+        position: "relative",
+        touchAction: "none",
+        userSelect: "none",
+        backdropFilter: "blur(6px)",
       }}
     >
       <div
         style={{
+          width: k,
+          height: k,
+          borderRadius: k,
           position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: size * 0.42,
-          height: size * 0.42,
-          transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-          borderRadius: 999,
-          background: "rgba(96,165,250,.9)",
-          boxShadow: "0 6px 16px rgba(96,165,250,.35)",
+          left: (pad - k) / 2 + knobX,
+          top: (pad - k) / 2 + knobY,
+          background: "rgba(255,255,255,.9)",
+          boxShadow: "0 6px 20px rgba(0,0,0,.35)",
+          transform: "translate(-50%, -50%)",
         }}
       />
     </div>
