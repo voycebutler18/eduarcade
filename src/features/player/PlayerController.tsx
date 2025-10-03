@@ -1,3 +1,4 @@
+// src/features/player/PlayerController.tsx
 import { useEffect, useRef } from "react";
 import { Group, Object3D } from "three";
 import { useFrame } from "@react-three/fiber";
@@ -5,10 +6,10 @@ import type { Collider } from "../campus/OutdoorWorld3D";
 
 /**
  * Jitter-free, fixed-timestep top-down controller (XZ plane)
- * - Keyboard (WASD / Arrow keys)
+ * - Keyboard (WASD / Arrow keys) via e.code (layout-safe)
  * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
- * - Only updates Object3D when position or yaw actually changes (epsilon)
- * - NEW: Auto-rotate to face movement direction
+ * - Collision against simple circle/box colliders
+ * - Persistent facing: smooth yaw damping toward movement direction
  */
 
 type Vec2 = { x: number; z: number };
@@ -20,7 +21,7 @@ export default function PlayerController({
   radius = 0.45,
   colliders = [],
   nodeRef,
-  inputDirRef, // <- optional thumbstick direction
+  inputDirRef,         // <- optional thumbstick/virtual dir
   onMove,
   children,
 }: {
@@ -38,56 +39,76 @@ export default function PlayerController({
 
   const pos = useRef<Vec2>({ ...start });
   const placedOnce = useRef(false);
+
+  // keyboard state by e.code (layout-safe)
   const keys = useRef<Record<string, boolean>>({});
 
+  // integrator
   const EPS = 1e-5;
   const STEP = 1 / 120; // fixed integration step (seconds)
   const acc = useRef(0);
 
-  // track facing yaw; only update when moving
-  const pendingYaw = useRef<number | null>(null);
+  // facing (yaw) with smoothing toward latest input direction
+  const yaw = useRef(0);
+  const targetYaw = useRef<number | null>(null);
 
-  /* ---------------- keyboard ---------------- */
-
+  /* ---------------- robust keyboard (arrows + WASD) ---------------- */
   useEffect(() => {
-    const wanted = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
+    const wanted = new Set([
+      "KeyW", "KeyA", "KeyS", "KeyD",
+      "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+    ]);
+
     const down = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (wanted.has(k)) e.preventDefault();
       // ignore typing fields
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
-      keys.current[k] = true;
+
+      if (wanted.has(e.code)) {
+        e.preventDefault(); // stop page scroll with arrows
+        keys.current[e.code] = true;
+      }
     };
+
     const up = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (wanted.has(k)) e.preventDefault();
-      keys.current[k] = false;
+      if (wanted.has(e.code)) {
+        e.preventDefault();
+        keys.current[e.code] = false;
+      }
     };
+
+    const clear = () => {
+      for (const k of wanted) keys.current[k] = false;
+    };
+
     window.addEventListener("keydown", down, { passive: false });
     window.addEventListener("keyup", up, { passive: false });
+    window.addEventListener("blur", clear);
+
     return () => {
       window.removeEventListener("keydown", down as any);
       window.removeEventListener("keyup", up as any);
+      window.removeEventListener("blur", clear as any);
     };
   }, []);
 
   /* ---------------- helpers ---------------- */
 
   function readInput(): Vec2 {
-    // keyboard first
+    // keyboard
     let x = 0, z = 0;
     const k = keys.current;
-    if (k["w"] || k["arrowup"]) z -= 1;
-    if (k["s"] || k["arrowdown"]) z += 1;
-    if (k["a"] || k["arrowleft"]) x -= 1;
-    if (k["d"] || k["arrowright"]) x += 1;
 
-    // stick (override only if actually moved past dead-zone)
+    if (k["KeyW"] || k["ArrowUp"])    z -= 1;
+    if (k["KeyS"] || k["ArrowDown"])  z += 1;
+    if (k["KeyA"] || k["ArrowLeft"])  x -= 1;
+    if (k["KeyD"] || k["ArrowRight"]) x += 1;
+
+    // stick/virtual override if outside dead-zone
     const s = inputDirRef?.current;
     if (s) {
       const mag = Math.hypot(s.x, s.z);
-      const DEAD = 0.18; // dead-zone
+      const DEAD = 0.18;
       if (mag > DEAD) {
         x = s.x / mag;
         z = s.z / mag;
@@ -107,12 +128,23 @@ export default function PlayerController({
     return { x: nx, z: nz };
   }
 
+  // angle utilities
+  const shortestAngle = (a: number, b: number) => {
+    let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
+
   /* ---------------- mount ---------------- */
 
   useEffect(() => {
     pos.current = { ...start };
     if (ref.current) ref.current.position.set(start.x, 0, start.z);
     placedOnce.current = true;
+
+    yaw.current = 0;          // start facing +Z
+    targetYaw.current = null;
+
     onMove?.({ ...start });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -120,25 +152,24 @@ export default function PlayerController({
   /* ---------------- main loop (fixed timestep) ---------------- */
 
   useFrame((_state, dt) => {
-    // place once if object just appeared
+    // ensure object is placed when it first appears
     if (!placedOnce.current && ref.current) {
       ref.current.position.set(pos.current.x, 0, pos.current.z);
       placedOnce.current = true;
     }
 
-    // clamp dt and accumulate
-    acc.current += Math.min(0.05, Math.max(0, dt));
+    const clamped = Math.min(0.05, Math.max(0, dt));
+    acc.current += clamped;
 
     let moved = false;
-    pendingYaw.current = null; // reset each frame; set when we have input
 
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
       const dir = readInput();
       if (dir.x !== 0 || dir.z !== 0) {
-        // remember facing for this step
-        pendingYaw.current = Math.atan2(dir.x, dir.z);
+        // update facing target whenever we have input
+        targetYaw.current = Math.atan2(dir.x, dir.z);
 
         const dx = dir.x * speed * STEP;
         const dz = dir.z * speed * STEP;
@@ -151,15 +182,21 @@ export default function PlayerController({
       }
     }
 
+    // smooth yaw toward target if present
+    const DAMP = 16; // higher = snappier
+    if (targetYaw.current !== null) {
+      const d = shortestAngle(yaw.current, targetYaw.current);
+      const t = 1 - Math.exp(-DAMP * clamped); // exponential smoothing
+      yaw.current = yaw.current + d * t;
+    }
+
+    // apply transforms every frame (prevents snap-backs)
     if (ref.current) {
       if (moved) {
         ref.current.position.set(pos.current.x, 0, pos.current.z);
         onMove?.({ ...pos.current });
       }
-      // apply facing if we had non-zero input this frame
-      if (pendingYaw.current !== null) {
-        ref.current.rotation.y = pendingYaw.current!;
-      }
+      ref.current.rotation.y = yaw.current;
     }
   });
 
