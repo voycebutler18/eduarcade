@@ -5,15 +5,12 @@ import { useFrame } from "@react-three/fiber";
 import type { Collider } from "../campus/OutdoorWorld3D";
 
 /**
- * Jitter-free, fixed-timestep top-down controller (XZ plane)
- * - Keyboard (WASD / Arrow keys) via e.code (layout-safe)
- * - Optional on-screen stick via inputDirRef {x,z} in [-1,1]
- * - Collision against simple circle/box colliders
- * - Persistent facing with smooth damping
- * - Live speed via speedRef (e.g., Shift sprint)
- * - NEW:
- *    - ignoreInputYaw: movement won't change facing
- *    - manualYawRef: externally force yaw (radians) until released
+ * PlayerController (top-down XZ with Y jump/gravity)
+ * - Keyboard (WASD / Arrows) + Thumbstick (inputDirRef {x,z})
+ * - Collides in XZ against simple circle/box colliders
+ * - Smooth facing (sticky) + manual yaw lock + ignoreInputYaw
+ * - Live speed via speedRef (for sprint)
+ * - NEW: Y-axis physics (gravity/jump). Ground at groundY.
  */
 
 type Vec2 = { x: number; z: number };
@@ -21,16 +18,22 @@ type DirRef = React.MutableRefObject<{ x: number; z: number } | null>;
 
 export default function PlayerController({
   start = { x: 0, z: 6 },
-  speed = 6,                                // base speed (fallback)
-  speedRef,                                 // live speed override (e.g., SprintModifier)
+  speed = 6,                                       // base walk speed
+  speedRef,                                        // live override (e.g., sprint)
   radius = 0.45,
   colliders = [],
   nodeRef,
-  inputDirRef,                              // optional thumbstick/virtual dir
+  inputDirRef,                                     // optional thumbstick/virtual dir
   onMove,
-  // NEW:
+  // Facing controls
   ignoreInputYaw = false,
   manualYawRef,
+  // Jump/Gravity
+  groundY = 0,
+  gravity = 30,                                    // units/sec^2 downward
+  jumpSpeed = 8,                                   // initial upward velocity
+  airControl = 0.65,                               // movement speed multiplier in air
+  jumpRef,                                         // set true to request a jump (one-shot)
   children,
 }: {
   start?: Vec2;
@@ -41,30 +44,40 @@ export default function PlayerController({
   nodeRef?: React.MutableRefObject<Object3D | null>;
   inputDirRef?: DirRef;
   onMove?: (pos: Vec2) => void;
-  // NEW:
   ignoreInputYaw?: boolean;
   manualYawRef?: React.MutableRefObject<number | null>;
+  groundY?: number;
+  gravity?: number;
+  jumpSpeed?: number;
+  airControl?: number;
+  jumpRef?: React.MutableRefObject<boolean | undefined>;
   children?: React.ReactNode;
 }) {
   const localRef = useRef<Group>(null);
   const ref = nodeRef ?? localRef;
 
+  // horizontal position
   const pos = useRef<Vec2>({ ...start });
   const placedOnce = useRef(false);
+
+  // vertical physics
+  const y = useRef<number>(groundY);
+  const vy = useRef<number>(0);
+  const grounded = useRef<boolean>(true);
 
   // keyboard state by e.code (layout-safe)
   const keys = useRef<Record<string, boolean>>({});
 
   // integrator
   const EPS = 1e-5;
-  const STEP = 1 / 120; // fixed integration step (seconds)
+  const STEP = 1 / 120; // fixed integration step
   const acc = useRef(0);
 
-  // facing (yaw) with smoothing toward latest input direction
+  // facing
   const yaw = useRef(0);
   const targetYaw = useRef<number | null>(null);
 
-  /* ---------------- robust keyboard (arrows + WASD) ---------------- */
+  /* ---------------- keyboard ---------------- */
   useEffect(() => {
     const wanted = new Set([
       "KeyW", "KeyA", "KeyS", "KeyD",
@@ -77,7 +90,7 @@ export default function PlayerController({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as any).isContentEditable)) return;
 
       if (wanted.has(e.code)) {
-        e.preventDefault(); // stop page scroll with arrows
+        e.preventDefault();
         keys.current[e.code] = true;
       }
     };
@@ -105,9 +118,7 @@ export default function PlayerController({
   }, []);
 
   /* ---------------- helpers ---------------- */
-
   function readInput(): Vec2 {
-    // keyboard
     let x = 0, z = 0;
     const k = keys.current;
 
@@ -140,7 +151,6 @@ export default function PlayerController({
     return { x: nx, z: nz };
   }
 
-  // angle utilities
   const shortestAngle = (a: number, b: number) => {
     let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
     if (d < -Math.PI) d += Math.PI * 2;
@@ -148,13 +158,16 @@ export default function PlayerController({
   };
 
   /* ---------------- mount ---------------- */
-
   useEffect(() => {
     pos.current = { ...start };
-    if (ref.current) ref.current.position.set(start.x, 0, start.z);
+    y.current = groundY;
+    vy.current = 0;
+    grounded.current = true;
+
+    if (ref.current) ref.current.position.set(start.x, y.current, start.z);
     placedOnce.current = true;
 
-    yaw.current = 0;          // start facing +Z
+    yaw.current = 0;
     targetYaw.current = null;
 
     onMove?.({ ...start });
@@ -162,11 +175,9 @@ export default function PlayerController({
   }, []);
 
   /* ---------------- main loop (fixed timestep) ---------------- */
-
   useFrame((_state, dt) => {
-    // ensure object is placed when it first appears
     if (!placedOnce.current && ref.current) {
-      ref.current.position.set(pos.current.x, 0, pos.current.z);
+      ref.current.position.set(pos.current.x, y.current, pos.current.z);
       placedOnce.current = true;
     }
 
@@ -175,15 +186,15 @@ export default function PlayerController({
 
     let moved = false;
 
-    // read current speed (ref wins, else prop fallback)
-    const currentSpeed = speedRef?.current ?? speed;
+    const baseSpeed = speedRef?.current ?? speed;
+    const currentSpeed = grounded.current ? baseSpeed : baseSpeed * airControl;
 
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
+      // 1) Read input (XZ)
       const dir = readInput();
       if (dir.x !== 0 || dir.z !== 0) {
-        // only let input change facing if not locked/ignored
         if (!ignoreInputYaw && !(manualYawRef && manualYawRef.current != null)) {
           targetYaw.current = Math.atan2(dir.x, dir.z);
         }
@@ -191,38 +202,60 @@ export default function PlayerController({
         const dx = dir.x * currentSpeed * STEP;
         const dz = dir.z * currentSpeed * STEP;
         const next = tryMove(pos.current, dx, dz);
-
         if (Math.abs(next.x - pos.current.x) > EPS || Math.abs(next.z - pos.current.z) > EPS) {
           pos.current = next;
           moved = true;
         }
       }
+
+      // 2) Jump request (one-shot)
+      if (jumpRef && jumpRef.current) {
+        if (grounded.current) {
+          vy.current = jumpSpeed;
+          grounded.current = false;
+        }
+        // consume the request
+        jumpRef.current = false;
+      }
+
+      // 3) Gravity integration
+      vy.current -= gravity * STEP;
+      y.current += vy.current * STEP;
+
+      // 4) Ground resolution
+      if (y.current <= groundY) {
+        y.current = groundY;
+        if (vy.current < 0) vy.current = 0;
+        grounded.current = true;
+      } else {
+        grounded.current = false;
+      }
     }
 
-    // Yaw update:
-    const DAMP = 16; // higher = snappier
+    // Yaw update every frame (sticky by default)
+    const DAMP = 16;
     if (manualYawRef && manualYawRef.current != null) {
-      // external override wins (sticky until you set it back to null)
       yaw.current = manualYawRef.current;
     } else if (targetYaw.current !== null) {
       const d = shortestAngle(yaw.current, targetYaw.current);
-      const t = 1 - Math.exp(-DAMP * clamped); // exponential smoothing
+      const t = 1 - Math.exp(-DAMP * clamped);
       yaw.current = yaw.current + d * t;
     }
-    // else: keep existing yaw (sticky)
 
-    // apply transforms every frame (prevents snap-backs)
+    // apply transforms
     if (ref.current) {
-      if (moved) {
-        ref.current.position.set(pos.current.x, 0, pos.current.z);
+      if (moved || !grounded.current) {
+        ref.current.position.set(pos.current.x, y.current, pos.current.z);
         onMove?.({ ...pos.current });
+      } else {
+        // still update Y to keep feet glued to ground after jump landing
+        ref.current.position.y = y.current;
       }
       ref.current.rotation.y = yaw.current;
     }
   });
 
   /* ---------------- render ---------------- */
-
   return (
     <group ref={ref as React.MutableRefObject<Group | null>}>
       {children ?? (
@@ -235,7 +268,7 @@ export default function PlayerController({
   );
 }
 
-/* ------------- collision ------------- */
+/* ------------- collision (XZ only) ------------- */
 function intersects(x: number, z: number, r: number, cs: Collider[]) {
   for (const c of cs) {
     if (c.kind === "circle") {
