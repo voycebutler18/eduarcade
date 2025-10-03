@@ -5,12 +5,13 @@ import { useFrame } from "@react-three/fiber";
 import type { Collider } from "../campus/OutdoorWorld3D";
 
 /**
- * PlayerController (top-down XZ with Y jump/gravity)
+ * PlayerController (top-down XZ + Y jump/gravity)
  * - Keyboard (WASD / Arrows) + Thumbstick (inputDirRef {x,z})
  * - Collides in XZ against simple circle/box colliders
  * - Smooth facing (sticky) + manual yaw lock + ignoreInputYaw
  * - Live speed via speedRef (for sprint)
- * - NEW: Y-axis physics (gravity/jump). Ground at groundY.
+ * - Jump & gravity on Y
+ * - NEW: Coyote time + jump buffer for forgiving jumps
  */
 
 type Vec2 = { x: number; z: number };
@@ -34,6 +35,9 @@ export default function PlayerController({
   jumpSpeed = 8,                                   // initial upward velocity
   airControl = 0.65,                               // movement speed multiplier in air
   jumpRef,                                         // set true to request a jump (one-shot)
+  // NEW: QoL jump params
+  coyoteMs = 120,                                   // allow jump this many ms after leaving ground
+  jumpBufferMs = 120,                               // remember jump press for this many ms
   children,
 }: {
   start?: Vec2;
@@ -51,6 +55,8 @@ export default function PlayerController({
   jumpSpeed?: number;
   airControl?: number;
   jumpRef?: React.MutableRefObject<boolean | undefined>;
+  coyoteMs?: number;
+  jumpBufferMs?: number;
   children?: React.ReactNode;
 }) {
   const localRef = useRef<Group>(null);
@@ -76,6 +82,10 @@ export default function PlayerController({
   // facing
   const yaw = useRef(0);
   const targetYaw = useRef<number | null>(null);
+
+  // NEW: jump timing helpers
+  const lastGroundedMs = useRef<number>(performance.now());
+  const jumpBufferUntilMs = useRef<number>(0);
 
   /* ---------------- keyboard ---------------- */
   useEffect(() => {
@@ -170,6 +180,9 @@ export default function PlayerController({
     yaw.current = 0;
     targetYaw.current = null;
 
+    lastGroundedMs.current = performance.now();
+    jumpBufferUntilMs.current = 0;
+
     onMove?.({ ...start });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -192,6 +205,12 @@ export default function PlayerController({
     while (acc.current >= STEP) {
       acc.current -= STEP;
 
+      // 0) Consume a jump press into buffer window (press may come early)
+      if (jumpRef && jumpRef.current) {
+        jumpBufferUntilMs.current = performance.now() + jumpBufferMs;
+        jumpRef.current = false; // consume edge
+      }
+
       // 1) Read input (XZ)
       const dir = readInput();
       if (dir.x !== 0 || dir.z !== 0) {
@@ -208,27 +227,36 @@ export default function PlayerController({
         }
       }
 
-      // 2) Jump request (one-shot)
-      if (jumpRef && jumpRef.current) {
-        if (grounded.current) {
-          vy.current = jumpSpeed;
-          grounded.current = false;
-        }
-        // consume the request
-        jumpRef.current = false;
-      }
-
-      // 3) Gravity integration
+      // 2) Gravity integration
       vy.current -= gravity * STEP;
       y.current += vy.current * STEP;
 
-      // 4) Ground resolution
+      // 3) Ground resolution + coyote bookkeeping
+      const wasGrounded = grounded.current;
       if (y.current <= groundY) {
         y.current = groundY;
         if (vy.current < 0) vy.current = 0;
         grounded.current = true;
       } else {
         grounded.current = false;
+      }
+
+      if (grounded.current) {
+        lastGroundedMs.current = performance.now();
+      }
+
+      // 4) Buffered jump & coyote logic
+      const now = performance.now();
+      const withinBuffer = now <= jumpBufferUntilMs.current;
+      const withinCoyote = (now - lastGroundedMs.current) <= coyoteMs;
+
+      // Trigger jump if either:
+      //  - we are on ground and have a buffered press
+      //  - we recently left ground (coyote) and have a buffered press
+      if (withinBuffer && (grounded.current || (!grounded.current && withinCoyote))) {
+        vy.current = jumpSpeed;
+        grounded.current = false;
+        jumpBufferUntilMs.current = 0; // consume buffer
       }
     }
 
@@ -248,7 +276,6 @@ export default function PlayerController({
         ref.current.position.set(pos.current.x, y.current, pos.current.z);
         onMove?.({ ...pos.current });
       } else {
-        // still update Y to keep feet glued to ground after jump landing
         ref.current.position.y = y.current;
       }
       ref.current.rotation.y = yaw.current;
