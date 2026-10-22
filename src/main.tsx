@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./lib/leaseVisionFetchPatch";
 import App from "./App";
 
 // Global styles
