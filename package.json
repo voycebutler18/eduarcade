@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "start:ai": "node server/ai-server.mjs"
+    "start:ai": "node server/start.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.6",
