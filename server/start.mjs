@@ -4,5 +4,7 @@ import './resident-concierge-patch.mjs';
 import './ai-server.mjs';
 import {startComplianceMonitor} from './compliance-monitor.mjs';
 import {startNovaSupervisor} from './nova-supervisor.mjs';
+import {startJurisdictionResolver} from './jurisdiction-resolver.mjs';
+startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
