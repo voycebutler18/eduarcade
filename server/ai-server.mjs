@@ -36,6 +36,97 @@ app.post('/api/payments/checkout',requireAuth,async(req,res)=>{if(paymentsReady(
 
 app.post('/api/resident/activate',requireAuth,async(req,res)=>{if(!admin)return res.status(503).json({error:'Resident account service is not configured'});try{const token=String(req.body?.token||'');if(!token)return res.status(400).json({error:'Resident access token is required'});const{data:profile}=await admin.from('profiles').select('is_admin').eq('id',req.user.id).maybeSingle();const{data:owned}=await admin.from('properties').select('id').eq('owner_id',req.user.id).limit(1);if(profile?.is_admin||owned?.length)return res.status(409).json({error:'This login is already a landlord or administrator account'});const{data:link}=await admin.from('lease_payment_links').select('lease_id,active').eq('token',token).eq('active',true).maybeSingle();if(!link)return res.status(404).json({error:'Resident access link is invalid or inactive'});const{data:lease}=await admin.from('leases').select('id,tenant_id,status').eq('id',link.lease_id).single();if(!lease||lease.status!=='active')return res.status(410).json({error:'This lease is no longer active'});const{data:existingUser}=await admin.from('tenants').select('user_id').eq('id',lease.tenant_id).single();if(existingUser?.user_id&&existingUser.user_id!==req.user.id)return res.status(409).json({error:'A resident account is already activated for this lease'});const{error:tenantErr}=await admin.from('tenants').update({user_id:req.user.id}).eq('id',lease.tenant_id).or(`user_id.is.null,user_id.eq.${req.user.id}`);if(tenantErr)throw tenantErr;const{error:claimErr}=await admin.from('resident_account_claims').upsert({user_id:req.user.id,tenant_id:lease.tenant_id,lease_id:lease.id},{onConflict:'tenant_id,lease_id'});if(claimErr)throw claimErr;return res.json({activated:true})}catch(e){console.error('resident-activate',e);return res.status(500).json({error:'Unable to activate resident account'})}});
 
+
+async function storeMaintenancePhotos({leaseId,requestId,photos=[]}){
+  if(!admin||!Array.isArray(photos)||!photos.length)return [];
+  const paths=[];
+  for(let i=0;i<Math.min(photos.length,4);i++){
+    const item=photos[i]||{};
+    const match=String(item.data||'').match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/);
+    if(!match)continue;
+    const mime=match[1];
+    const buffer=Buffer.from(match[2],'base64');
+    if(!buffer.length||buffer.length>5*1024*1024)continue;
+    const ext=mime==='image/jpeg'?'jpg':mime.split('/')[1];
+    const path=`resident/${leaseId}/${requestId}/${Date.now()}-${i}.${ext}`;
+    const up=await admin.storage.from('maintenance-photos').upload(path,buffer,{contentType:mime,upsert:false});
+    if(!up.error)paths.push(path);
+  }
+  return paths;
+}
+async function createResidentMaintenance({lease,tenant,unit,body,source}){
+  const category=String(body?.category||'Other').trim().slice(0,80);
+  const area=String(body?.area||'Other').trim().slice(0,80);
+  const issue=String(body?.issue||'Maintenance issue').trim().slice(0,120);
+  const details=String(body?.description||'').trim().slice(0,3000);
+  const permission=String(body?.entryPermission||'not_specified').trim().slice(0,40);
+  const reported=String(body?.priority||'routine');
+  const priority=['routine','high','emergency'].includes(reported)?reported:'routine';
+  if(!issue)return {error:'Please choose or describe the maintenance issue',status:400};
+  const description=`Category: ${category}\nArea: ${area}\nEntry permission: ${permission}${details?`\n\nResident details:\n${details}`:''}`;
+  const {data:reqRow,error:reqErr}=await admin.from('maintenance_requests').insert({
+    owner_id:lease.owner_id,property_id:unit.property_id,unit_id:lease.unit_id,tenant_id:lease.tenant_id,
+    title:issue,description,priority,status:'open',approval_required:true
+  }).select('id,title,priority,status,created_at').single();
+  if(reqErr)throw reqErr;
+  const photoPaths=await storeMaintenancePhotos({leaseId:lease.id,requestId:reqRow.id,photos:body?.photos});
+  if(photoPaths.length)await admin.from('maintenance_requests').update({photo_urls:photoPaths}).eq('id',reqRow.id);
+  await admin.from('ai_actions').insert({
+    owner_id:lease.owner_id,action_type:'maintenance_request_received',entity_type:'maintenance_request',
+    entity_id:reqRow.id,status:'proposed',
+    summary:`New maintenance request: ${issue}`,
+    metadata:{source,tenant_id:lease.tenant_id,lease_id:lease.id,unit_id:lease.unit_id,category,area,priority,unread:true}
+  });
+  return {request:{...reqRow,category,area,photo_count:photoPaths.length}};
+}
+async function resolveResidentLink(token){
+  if(!admin)return {error:'Resident service is not configured',status:503};
+  const {data:link}=await admin.from('lease_payment_links').select('lease_id,owner_id,active').eq('token',token).eq('active',true).maybeSingle();
+  if(!link)return {error:'Resident access link not found or inactive',status:404};
+  const {data:lease}=await admin.from('leases').select('id,owner_id,tenant_id,unit_id,status').eq('id',link.lease_id).single();
+  if(!lease||lease.status!=='active')return {error:'This lease is no longer active',status:410};
+  const [{data:tenant},{data:unit}]=await Promise.all([
+    admin.from('tenants').select('id,full_name,user_id').eq('id',lease.tenant_id).single(),
+    admin.from('units').select('id,unit_label,property_id').eq('id',lease.unit_id).single()
+  ]);
+  if(!tenant||!unit)return {error:'Resident record is incomplete',status:409};
+  return {lease,tenant,unit};
+}
+app.get('/api/public/resident/:token/maintenance',async(req,res)=>{
+  try{
+    const resolved=await resolveResidentLink(String(req.params.token||''));
+    if(resolved.error)return res.status(resolved.status).json({error:resolved.error});
+    const {lease}=resolved;
+    const {data,error}=await admin.from('maintenance_requests')
+      .select('id,title,description,priority,status,created_at,updated_at,scheduled_for,approved_at,photo_urls')
+      .eq('tenant_id',lease.tenant_id).eq('unit_id',lease.unit_id).order('created_at',{ascending:false}).limit(25);
+    if(error)throw error;
+    return res.json({requests:(data||[]).map(r=>({...r,photo_count:Array.isArray(r.photo_urls)?r.photo_urls.length:0,photo_urls:undefined}))});
+  }catch(e){console.error('public-maintenance-list',e);return res.status(500).json({error:'Unable to load maintenance requests'})}
+});
+app.post('/api/public/resident/:token/maintenance',async(req,res)=>{
+  try{
+    const resolved=await resolveResidentLink(String(req.params.token||''));
+    if(resolved.error)return res.status(resolved.status).json({error:resolved.error});
+    const created=await createResidentMaintenance({...resolved,body:req.body,source:'resident_access_link'});
+    if(created.error)return res.status(created.status).json({error:created.error});
+    return res.status(201).json(created);
+  }catch(e){console.error('public-maintenance-create',e);return res.status(500).json({error:'Unable to submit maintenance request'})}
+});
+app.post('/api/resident/maintenance',requireAuth,async(req,res)=>{
+  try{
+    if(!admin)return res.status(503).json({error:'Resident service is not configured'});
+    const {data:tenant}=await admin.from('tenants').select('id,owner_id').eq('user_id',req.user.id).maybeSingle();
+    if(!tenant)return res.status(403).json({error:'Resident account required'});
+    const {data:lease}=await admin.from('leases').select('id,owner_id,tenant_id,unit_id,status').eq('tenant_id',tenant.id).eq('status','active').maybeSingle();
+    if(!lease)return res.status(404).json({error:'No active lease found'});
+    const {data:unit}=await admin.from('units').select('id,unit_label,property_id').eq('id',lease.unit_id).single();
+    const created=await createResidentMaintenance({lease,tenant,unit,body:req.body,source:'resident_portal'});
+    if(created.error)return res.status(created.status).json({error:created.error});
+    return res.status(201).json(created);
+  }catch(e){console.error('resident-maintenance-create',e);return res.status(500).json({error:'Unable to submit maintenance request'})}
+});
+
 app.get('/api/public/pay/:token',async(req,res)=>{if(paymentsReady(res))return;try{const token=String(req.params.token||'');const{data:link}=await admin.from('lease_payment_links').select('lease_id,owner_id,active').eq('token',token).eq('active',true).maybeSingle();if(!link)return res.status(404).json({error:'Payment link not found or inactive'});const{data:lease}=await admin.from('leases').select('id,owner_id,tenant_id,unit_id,monthly_rent,status,end_date').eq('id',link.lease_id).single();if(!lease||lease.status!=='active')return res.status(410).json({error:'This lease is no longer active'});const[{data:tenant},{data:unit},{data:charges}]=await Promise.all([admin.from('tenants').select('full_name,user_id').eq('id',lease.tenant_id).single(),admin.from('units').select('unit_label,property_id').eq('id',lease.unit_id).single(),admin.from('rent_charges').select('id,amount,due_date,status').eq('lease_id',lease.id).in('status',['due','partial']).order('due_date',{ascending:true})]);let current=null;for(const ch of charges||[]){const{data:paid}=await admin.from('payments').select('amount').eq('rent_charge_id',ch.id);const paidTotal=(paid||[]).reduce((s,p)=>s+Number(p.amount),0);const remaining=Math.max(0,Number(ch.amount)-paidTotal);if(remaining>0){current={id:ch.id,due_date:ch.due_date,remaining};break}}let propertyName='Rental property';if(unit?.property_id){const{data:p}=await admin.from('properties').select('name').eq('id',unit.property_id).single();if(p?.name)propertyName=p.name}return res.json({tenant_name:tenant?.full_name||'Tenant',property_name:propertyName,unit_label:unit?.unit_label||'',amount_due:current?.remaining||0,due_date:current?.due_date||null,paid_up:!current,account_active:Boolean(tenant?.user_id)})}catch(e){console.error('public-pay-info',e);return res.status(500).json({error:'Unable to load payment details'})}});
 
 app.post('/api/public/pay/:token/checkout',async(req,res)=>{if(paymentsReady(res))return;try{const token=String(req.params.token||''),payerName=String(req.body?.payerName||'').trim(),receiptEmail=String(req.body?.receiptEmail||'').trim();if(!payerName||!receiptEmail||!receiptEmail.includes('@'))return res.status(400).json({error:'Name and valid receipt email are required'});const{data:link}=await admin.from('lease_payment_links').select('lease_id,owner_id,active').eq('token',token).eq('active',true).maybeSingle();if(!link)return res.status(404).json({error:'Payment link not found or inactive'});const{data:lease}=await admin.from('leases').select('id,owner_id,tenant_id,status').eq('id',link.lease_id).single();if(!lease||lease.status!=='active')return res.status(410).json({error:'This lease is no longer active'});const{data:charges}=await admin.from('rent_charges').select('id,amount,due_date,status').eq('lease_id',lease.id).in('status',['due','partial']).order('due_date',{ascending:true});let charge=null,due=0;for(const ch of charges||[]){const{data:paid}=await admin.from('payments').select('amount').eq('rent_charge_id',ch.id);const remaining=Math.max(0,Number(ch.amount)-(paid||[]).reduce((s,p)=>s+Number(p.amount),0));if(remaining>0){charge=ch;due=remaining;break}}if(!charge||due<=0)return res.status(409).json({error:'There is no unpaid rent charge on this lease'});const{data:pa}=await admin.from('payment_accounts').select('processor_account_id,charges_enabled').eq('owner_id',lease.owner_id).single();if(!pa?.processor_account_id||!pa.charges_enabled)return res.status(409).json({error:'Online payments are not enabled for this property'});const{data:tx,error:txErr}=await admin.from('payment_transactions').insert({owner_id:lease.owner_id,tenant_id:lease.tenant_id,lease_id:lease.id,rent_charge_id:charge.id,amount:due,currency:'usd',processor:'stripe',status:'created',metadata:{source:'public_payment_link',payer_name:payerName,receipt_email:receiptEmail}}).select('id').single();if(txErr)throw txErr;const session=await stripe.checkout.sessions.create({mode:'payment',customer_email:receiptEmail,payment_method_types:['card','us_bank_account'],line_items:[{price_data:{currency:'usd',unit_amount:Math.round(due*100),product_data:{name:'Rent payment',description:`Rent due ${charge.due_date}`}},quantity:1}],payment_intent_data:{transfer_data:{destination:pa.processor_account_id},metadata:{rentpilot_transaction_id:tx.id}},success_url:`${FRONTEND_ORIGIN}/pay/${token}?payment=success`,cancel_url:`${FRONTEND_ORIGIN}/pay/${token}?payment=cancelled`,metadata:{rentpilot_transaction_id:tx.id,rent_charge_id:charge.id,lease_id:lease.id,payer_name:payerName}});await admin.from('payment_transactions').update({metadata:{source:'public_payment_link',payer_name:payerName,receipt_email:receiptEmail,checkout_session_id:session.id},updated_at:new Date().toISOString()}).eq('id',tx.id);return res.json({url:session.url})}catch(e){console.error('public-pay-checkout',e);return res.status(500).json({error:'Unable to start rent payment'})}});
