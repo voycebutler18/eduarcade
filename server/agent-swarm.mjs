@@ -36,7 +36,7 @@ async function addAssessment(task,values){
 async function addAction(task,type,summary,metadata={}){
   const {data:existing,error:readError}=await admin.from('ai_actions').select('id').eq('owner_id',task.owner_id).eq('action_type',type).eq('entity_id',task.entity_id).contains('metadata',{task_id:task.task_id}).maybeSingle();
   if(readError)throw readError;if(existing)return existing.id;
-  const {data,error}=await admin.from('ai_actions').insert({owner_id:task.owner_id,action_type:type,entity_type:'maintenance_request',entity_id:task.entity_id,status:'pending',summary,metadata:{task_id:task.task_id,...metadata}}).select('id').single();
+  const {data,error}=await admin.from('ai_actions').insert({owner_id:task.owner_id,action_type:type,entity_type:'maintenance_request',entity_id:task.entity_id,status:'proposed',summary,metadata:{task_id:task.task_id,...metadata}}).select('id').single();
   if(error)throw error;return data.id;
 }
 
@@ -53,7 +53,7 @@ async function addRequestAction(ownerId,requestId,type,summary,metadata={}){
   const key=String(metadata.escalation_key||type);
   const {data:existing,error:readError}=await admin.from('ai_actions').select('id').eq('owner_id',ownerId).eq('action_type',type).eq('entity_id',requestId).contains('metadata',{escalation_key:key}).maybeSingle();
   if(readError)throw readError;if(existing)return existing.id;
-  const {data,error}=await admin.from('ai_actions').insert({owner_id:ownerId,action_type:type,entity_type:'maintenance_request',entity_id:requestId,status:'pending',summary,metadata:{...metadata,escalation_key:key,deterministic:true}}).select('id').single();
+  const {data,error}=await admin.from('ai_actions').insert({owner_id:ownerId,action_type:type,entity_type:'maintenance_request',entity_id:requestId,status:'proposed',summary,metadata:{...metadata,escalation_key:key,deterministic:true}}).select('id').single();
   if(error)throw error;return data.id;
 }
 async function repairTracker(task){
@@ -209,7 +209,7 @@ async function feedbackCollector(task){
   if(req.status!=='completed')return {state:'not_completed',status:req.status};
   const now=new Date().toISOString();
   const {data:feedback,error:fe}=await admin.from('maintenance_feedback').upsert({
-    owner_id:req.owner_id,maintenance_request_id:req.id,tenant_id:req.tenant_id,status:'pending',requested_at:now,updated_at:now
+    owner_id:req.owner_id,maintenance_request_id:req.id,tenant_id:req.tenant_id,status:'proposed',requested_at:now,updated_at:now
   },{onConflict:'maintenance_request_id'}).select('id,status').single();
   if(fe)throw fe;
   if(req.tenant_id){
@@ -237,7 +237,7 @@ async function tenantWelcomer(task){
 async function defaultTimeline(task){
   const {data:lease,error}=await admin.from('leases').select('id,status,start_date,end_date,unit_id,tenant_id').eq('id',task.entity_id).maybeSingle();if(error)throw error;if(!lease)return {state:'lease_missing'};
   const {data:unit,error:ue}=await admin.from('units').select('property_id').eq('id',lease.unit_id).maybeSingle();if(ue)throw ue;
-  if(unit?.property_id){const {data:existing}=await admin.from('ai_actions').select('id').eq('owner_id',task.owner_id).eq('action_type','nova_legal_review_required').eq('entity_id',lease.id).contains('metadata',{task_id:task.task_id}).maybeSingle();if(!existing)await admin.from('ai_actions').insert({owner_id:task.owner_id,action_type:'nova_legal_review_required',entity_type:'lease',entity_id:lease.id,status:'pending',summary:'Lease status changed. Any default, notice, or eviction timeline requires source-verified law and human approval.',metadata:{task_id:task.task_id,lease_status:lease.status,property_id:unit.property_id,deterministic:true,human_approval_required:true}})}
+  if(unit?.property_id){const {data:existing}=await admin.from('ai_actions').select('id').eq('owner_id',task.owner_id).eq('action_type','nova_legal_review_required').eq('entity_id',lease.id).contains('metadata',{task_id:task.task_id}).maybeSingle();if(!existing)await admin.from('ai_actions').insert({owner_id:task.owner_id,action_type:'nova_legal_review_required',entity_type:'lease',entity_id:lease.id,status:'proposed',summary:'Lease status changed. Any default, notice, or eviction timeline requires source-verified law and human approval.',metadata:{task_id:task.task_id,lease_status:lease.status,property_id:unit.property_id,deterministic:true,human_approval_required:true}})}
   return {state:'human_review_required',lease_status:lease.status};
 }
 async function complianceHealth(task){
