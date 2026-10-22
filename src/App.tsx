@@ -1,112 +1,63 @@
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "./lib/supabase";
 
 type View = "overview" | "properties" | "tenants" | "money" | "maintenance" | "inbox" | "vendors" | "ai";
+type Property = { id:string; name:string; address_line1:string; city:string; state:string; postal_code:string; created_at:string };
 
 const nav: { id: View; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "properties", label: "Properties" },
-  { id: "tenants", label: "Tenants" },
-  { id: "money", label: "Money Chaser" },
-  { id: "maintenance", label: "Maintenance" },
-  { id: "inbox", label: "Inbox" },
-  { id: "vendors", label: "Vendors" },
-  { id: "ai", label: "AI Activity" },
+  { id: "overview", label: "Overview" }, { id: "properties", label: "Properties" }, { id: "tenants", label: "Tenants" },
+  { id: "money", label: "Money Chaser" }, { id: "maintenance", label: "Maintenance" }, { id: "inbox", label: "Inbox" },
+  { id: "vendors", label: "Vendors" }, { id: "ai", label: "AI Activity" },
 ];
-
 const overdue = [
   { tenant: "James W.", unit: "Oak Terrace · 2B", amount: 1600, days: 6, status: "Promise Friday" },
   { tenant: "Maria R.", unit: "Pine Court · 1A", amount: 1425, days: 4, status: "Reminder sent" },
   { tenant: "David K.", unit: "Oak Terrace · 4C", amount: 800, days: 2, status: "Partial payment" },
 ];
-
 const maintenance = [
   { issue: "Active kitchen leak", unit: "Oak Terrace · 2B", priority: "Emergency", status: "Vendor contacted" },
   { issue: "AC not cooling", unit: "Pine Court · 3A", priority: "High", status: "Awaiting approval" },
   { issue: "Bedroom door latch", unit: "Oak Terrace · 1C", priority: "Routine", status: "Scheduled" },
 ];
 
-function MoneyChaser() {
-  return <section className="panel-card">
-    <div className="section-head"><div><p className="eyebrow">Revenue recovery</p><h2>Money Chaser</h2></div><button className="primary-btn">Run follow-ups</button></div>
-    <div className="mini-grid">
-      <div className="metric"><span>Outstanding</span><strong>$3,825</strong><small>Across 3 tenants</small></div>
-      <div className="metric"><span>Promises to pay</span><strong>$1,600</strong><small>1 promise active</small></div>
-      <div className="metric"><span>Recovered this month</span><strong>$2,940</strong><small>AI-assisted follow-up</small></div>
-    </div>
-    <div className="table-wrap"><table><thead><tr><th>Tenant</th><th>Unit</th><th>Balance</th><th>Late</th><th>Status</th><th></th></tr></thead>
-    <tbody>{overdue.map(row => <tr key={row.tenant}><td><b>{row.tenant}</b></td><td>{row.unit}</td><td>{"$" + row.amount.toLocaleString()}</td><td>{row.days} days</td><td><span className="pill warn">{row.status}</span></td><td><button className="ghost-btn">Open</button></td></tr>)}</tbody></table></div>
-  </section>
+function AuthScreen(){
+  const [mode,setMode]=useState<"login"|"signup">("login"); const [email,setEmail]=useState(""); const [password,setPassword]=useState("");
+  const [name,setName]=useState(""); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false);
+  async function submit(e:FormEvent){ e.preventDefault(); setBusy(true); setMessage("");
+    if(mode==="signup"){
+      const {error}=await supabase.auth.signUp({email,password,options:{data:{full_name:name}}});
+      setMessage(error?error.message:"Account created. If email confirmation is enabled, check your inbox.");
+    } else { const {error}=await supabase.auth.signInWithPassword({email,password}); if(error)setMessage(error.message); }
+    setBusy(false);
+  }
+  return <div className="auth-shell"><div className="auth-card"><div className="logo auth-logo"><div className="logo-mark">R</div><div><strong>RentPilot AI</strong><span>Property operations</span></div></div>
+    <p className="eyebrow">Landlord workspace</p><h1>{mode==="login"?"Welcome back":"Create your workspace"}</h1><p className="auth-copy">Manage properties, rent recovery, maintenance and tenant communication from one place.</p>
+    <form onSubmit={submit} className="auth-form">{mode==="signup"&&<label>Full name<input required value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></label>}<label>Email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label><label>Password<input required minLength={6} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 6 characters"/></label><button className="primary-btn" disabled={busy}>{busy?"Working...":mode==="login"?"Sign in":"Create account"}</button></form>
+    {message&&<p className="form-message">{message}</p>}<button className="text-btn" onClick={()=>{setMode(mode==="login"?"signup":"login");setMessage("")}}>{mode==="login"?"New to RentPilot? Create an account":"Already have an account? Sign in"}</button>
+  </div></div>
 }
 
-function Maintenance() {
-  return <section className="panel-card">
-    <div className="section-head"><div><p className="eyebrow">Operations</p><h2>Maintenance AI</h2></div><button className="primary-btn">New request</button></div>
-    <div className="cards-list">{maintenance.map((item) => <article className="ticket" key={item.issue}>
-      <div><span className={item.priority === "Emergency" ? "priority emergency" : item.priority === "High" ? "priority high" : "priority"}>{item.priority}</span><h3>{item.issue}</h3><p>{item.unit}</p></div>
-      <div className="ticket-side"><span>{item.status}</span><button className="ghost-btn">Review</button></div>
-    </article>)}</div>
-  </section>
+function MoneyChaser(){return <section className="panel-card"><div className="section-head"><div><p className="eyebrow">Revenue recovery</p><h2>Money Chaser</h2></div><button className="primary-btn">Run follow-ups</button></div><div className="mini-grid"><div className="metric"><span>Outstanding</span><strong>$3,825</strong><small>Across 3 tenants</small></div><div className="metric"><span>Promises to pay</span><strong>$1,600</strong><small>1 promise active</small></div><div className="metric"><span>Recovered this month</span><strong>$2,940</strong><small>AI-assisted follow-up</small></div></div><div className="table-wrap"><table><thead><tr><th>Tenant</th><th>Unit</th><th>Balance</th><th>Late</th><th>Status</th><th></th></tr></thead><tbody>{overdue.map(row=><tr key={row.tenant}><td><b>{row.tenant}</b></td><td>{row.unit}</td><td>${row.amount.toLocaleString()}</td><td>{row.days} days</td><td><span className="pill warn">{row.status}</span></td><td><button className="ghost-btn">Open</button></td></tr>)}</tbody></table></div></section>}
+function Maintenance(){return <section className="panel-card"><div className="section-head"><div><p className="eyebrow">Operations</p><h2>Maintenance AI</h2></div><button className="primary-btn">New request</button></div><div className="cards-list">{maintenance.map(item=><article className="ticket" key={item.issue}><div><span className={item.priority==="Emergency"?"priority emergency":item.priority==="High"?"priority high":"priority"}>{item.priority}</span><h3>{item.issue}</h3><p>{item.unit}</p></div><div className="ticket-side"><span>{item.status}</span><button className="ghost-btn">Review</button></div></article>)}</div></section>}
+function Placeholder({title,copy}:{title:string;copy:string}){return <section className="panel-card empty-state"><p className="eyebrow">RentPilot AI</p><h2>{title}</h2><p>{copy}</p><button className="primary-btn">Add first item</button></section>}
+
+function Properties({session,openAdd,setOpenAdd}:{session:Session;openAdd:boolean;setOpenAdd:(v:boolean)=>void}){
+ const [items,setItems]=useState<Property[]>([]); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
+ const [form,setForm]=useState({name:"",address_line1:"",city:"",state:"",postal_code:""});
+ async function load(){setLoading(true);const {data,error}=await supabase.from("properties").select("id,name,address_line1,city,state,postal_code,created_at").order("created_at",{ascending:false});setItems((data||[]) as Property[]);setError(error?.message||"");setLoading(false)}
+ useEffect(()=>{load()},[]);
+ async function add(e:FormEvent){e.preventDefault();setError("");const {error}=await supabase.from("properties").insert({...form,owner_id:session.user.id});if(error){setError(error.message);return}setForm({name:"",address_line1:"",city:"",state:"",postal_code:""});setOpenAdd(false);await load()}
+ return <><section className="panel-card"><div className="section-head"><div><p className="eyebrow">Portfolio</p><h2>Properties</h2></div><button className="primary-btn" onClick={()=>setOpenAdd(true)}>+ Add property</button></div>{error&&<p className="form-message error">{error}</p>}{loading?<p className="muted">Loading properties...</p>:items.length===0?<div className="empty-inline"><h3>No properties yet</h3><p>Add your first rental property. It will be stored securely in your RentPilot account.</p><button className="primary-btn" onClick={()=>setOpenAdd(true)}>Add first property</button></div>:<div className="property-grid">{items.map(p=><article className="property-card" key={p.id}><div className="property-icon">⌂</div><div><h3>{p.name}</h3><p>{p.address_line1}</p><small>{p.city}, {p.state} {p.postal_code}</small></div></article>)}</div>}</section>{openAdd&&<div className="modal-backdrop" onMouseDown={()=>setOpenAdd(false)}><div className="modal" onMouseDown={e=>e.stopPropagation()}><div className="section-head"><div><p className="eyebrow">New portfolio asset</p><h2>Add property</h2></div><button className="close-btn" onClick={()=>setOpenAdd(false)}>×</button></div><form className="auth-form" onSubmit={add}><label>Property name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Oak Terrace"/></label><label>Street address<input required value={form.address_line1} onChange={e=>setForm({...form,address_line1:e.target.value})} placeholder="123 Main St"/></label><div className="form-row"><label>City<input required value={form.city} onChange={e=>setForm({...form,city:e.target.value})}/></label><label>State<input required maxLength={2} value={form.state} onChange={e=>setForm({...form,state:e.target.value.toUpperCase()})} placeholder="TX"/></label></div><label>ZIP code<input required value={form.postal_code} onChange={e=>setForm({...form,postal_code:e.target.value})}/></label><button className="primary-btn">Save property</button></form></div></div>}</>
 }
 
-function Placeholder({title, copy}:{title:string; copy:string}) {
-  return <section className="panel-card empty-state"><p className="eyebrow">RentPilot AI</p><h2>{title}</h2><p>{copy}</p><button className="primary-btn">Add first item</button></section>
-}
-
-export default function App() {
-  const [view, setView] = useState<View>("overview");
-  const current = useMemo(() => nav.find(n => n.id === view)?.label ?? "Overview", [view]);
-
-  return <div className="shell">
-    <aside className="sidebar">
-      <div className="logo"><div className="logo-mark">R</div><div><strong>RentPilot AI</strong><span>Property operations</span></div></div>
-      <nav>{nav.map(item => <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>{item.label}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="ai-chip"><span className="pulse"></span><div><b>AI is active</b><small>7 actions today</small></div></div><button className="nav-item">Settings</button></div>
-    </aside>
-
-    <main className="main">
-      <header className="topbar"><div><p className="eyebrow">Workspace</p><h1>{current}</h1></div><div className="top-actions"><button className="ghost-btn">Ask AI</button><button className="primary-btn">+ Add property</button><div className="avatar">PB</div></div></header>
-
-      {view === "overview" && <>
-        <section className="hero"><div><p className="eyebrow">Portfolio pulse</p><h2>Your properties are under control.</h2><p>RentPilot is tracking revenue, tenant communication, and maintenance in one place.</p></div><div className="health"><span>Portfolio health</span><strong>92%</strong><small>2 items need approval</small></div></section>
-        <section className="stat-grid">
-          <article><span>Expected rent</span><strong>$28,450</strong><small>This month</small></article>
-          <article><span>Collected</span><strong>$24,625</strong><small className="good">86.6% collected</small></article>
-          <article><span>Outstanding</span><strong>$3,825</strong><small className="bad">3 tenants overdue</small></article>
-          <article><span>Open maintenance</span><strong>4</strong><small>1 emergency</small></article>
-        </section>
-
-        <section className="dashboard-grid">
-          <div className="panel-card">
-            <div className="section-head"><div><p className="eyebrow">Needs attention</p><h2>Priority queue</h2></div><span className="count">5</span></div>
-            <div className="attention">
-              <button><span className="dot red"></span><div><b>3 overdue tenants</b><small>$3,825 total outstanding</small></div><strong>→</strong></button>
-              <button><span className="dot red"></span><div><b>Emergency plumbing request</b><small>Oak Terrace · Unit 2B</small></div><strong>→</strong></button>
-              <button><span className="dot amber"></span><div><b>2 payment promises</b><small>Next promise due Friday</small></div><strong>→</strong></button>
-              <button><span className="dot amber"></span><div><b>2 leases expiring soon</b><small>Within 60 days</small></div><strong>→</strong></button>
-            </div>
-          </div>
-
-          <div className="panel-card">
-            <div className="section-head"><div><p className="eyebrow">Autopilot</p><h2>AI activity today</h2></div><span className="live">LIVE</span></div>
-            <div className="activity">
-              <div><span>14</span><p><b>Rent reminders sent</b><small>3 tenants responded</small></p></div>
-              <div><span>4</span><p><b>Maintenance requests triaged</b><small>1 escalated for approval</small></p></div>
-              <div><span>2</span><p><b>Vendors contacted</b><small>1 appointment booked</small></p></div>
-              <div><span>2</span><p><b>Payment promises logged</b><small>$2,425 scheduled</small></p></div>
-            </div>
-          </div>
-        </section>
-
-        <MoneyChaser />
-      </>}
-
-      {view === "money" && <MoneyChaser />}
-      {view === "maintenance" && <Maintenance />}
-      {view === "properties" && <Placeholder title="Properties" copy="Add rental properties, units, occupancy, rent targets, and operational status." />}
-      {view === "tenants" && <Placeholder title="Tenants" copy="Tenant profiles will connect leases, balances, payment promises, maintenance, and messages." />}
-      {view === "inbox" && <Placeholder title="Property Inbox" copy="One inbox for tenant questions, payment conversations, maintenance updates, and AI-assisted replies." />}
-      {view === "vendors" && <Placeholder title="Vendors" copy="Track approved vendors, trades, service areas, availability, quotes, and job history." />}
-      {view === "ai" && <Placeholder title="AI Activity" copy="Every automated action will be logged here with status, reason, source, and approval history." />}
-    </main>
-  </div>;
+export default function App(){
+ const [session,setSession]=useState<Session|null>(null); const [authReady,setAuthReady]=useState(false); const [view,setView]=useState<View>("overview"); const [openAdd,setOpenAdd]=useState(false);
+ useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSession(data.session);setAuthReady(true)});const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>data.subscription.unsubscribe()},[]);
+ const current=useMemo(()=>nav.find(n=>n.id===view)?.label??"Overview",[view]); if(!authReady)return <div className="loading-screen">Loading RentPilot...</div>; if(!session)return <AuthScreen/>;
+ const goAdd=()=>{setView("properties");setOpenAdd(true)};
+ return <div className="shell"><aside className="sidebar"><div className="logo"><div className="logo-mark">R</div><div><strong>RentPilot AI</strong><span>Property operations</span></div></div><nav>{nav.map(item=><button key={item.id} className={view===item.id?"nav-item active":"nav-item"} onClick={()=>setView(item.id)}>{item.label}</button>)}</nav><div className="sidebar-bottom"><div className="ai-chip"><span className="pulse"></span><div><b>AI is active</b><small>Ready for your portfolio</small></div></div><button className="nav-item" onClick={()=>supabase.auth.signOut()}>Sign out</button></div></aside><main className="main"><header className="topbar"><div><p className="eyebrow">Workspace</p><h1>{current}</h1></div><div className="top-actions"><button className="ghost-btn">Ask AI</button><button className="primary-btn" onClick={goAdd}>+ Add property</button><div className="avatar">{(session.user.email||"RP").slice(0,2).toUpperCase()}</div></div></header>
+ {view==="overview"&&<><section className="hero"><div><p className="eyebrow">Portfolio pulse</p><h2>Your properties are under control.</h2><p>RentPilot is tracking revenue, tenant communication, and maintenance in one place.</p></div><div className="health"><span>Portfolio health</span><strong>92%</strong><small>2 items need approval</small></div></section><section className="stat-grid"><article><span>Expected rent</span><strong>$28,450</strong><small>This month</small></article><article><span>Collected</span><strong>$24,625</strong><small className="good">86.6% collected</small></article><article><span>Outstanding</span><strong>$3,825</strong><small className="bad">3 tenants overdue</small></article><article><span>Open maintenance</span><strong>4</strong><small>1 emergency</small></article></section><section className="dashboard-grid"><div className="panel-card"><div className="section-head"><div><p className="eyebrow">Needs attention</p><h2>Priority queue</h2></div><span className="count">5</span></div><div className="attention"><button><span className="dot red"></span><div><b>3 overdue tenants</b><small>$3,825 total outstanding</small></div><strong>→</strong></button><button><span className="dot red"></span><div><b>Emergency plumbing request</b><small>Oak Terrace · Unit 2B</small></div><strong>→</strong></button><button><span className="dot amber"></span><div><b>2 payment promises</b><small>Next promise due Friday</small></div><strong>→</strong></button></div></div><div className="panel-card"><div className="section-head"><div><p className="eyebrow">Autopilot</p><h2>AI activity today</h2></div><span className="live">LIVE</span></div><div className="activity"><div><span>14</span><p><b>Rent reminders sent</b><small>3 tenants responded</small></p></div><div><span>4</span><p><b>Maintenance requests triaged</b><small>1 escalated for approval</small></p></div><div><span>2</span><p><b>Vendors contacted</b><small>1 appointment booked</small></p></div></div></div></section><MoneyChaser/></>}
+ {view==="properties"&&<Properties session={session} openAdd={openAdd} setOpenAdd={setOpenAdd}/>} {view==="money"&&<MoneyChaser/>} {view==="maintenance"&&<Maintenance/>} {view==="tenants"&&<Placeholder title="Tenants" copy="Tenant profiles will connect leases, balances, payment promises, maintenance, and messages."/>} {view==="inbox"&&<Placeholder title="Property Inbox" copy="One inbox for tenant questions, payment conversations, maintenance updates, and AI-assisted replies."/>} {view==="vendors"&&<Placeholder title="Vendors" copy="Track approved vendors, trades, service areas, availability, quotes, and job history."/>} {view==="ai"&&<Placeholder title="AI Activity" copy="Every automated action will be logged here with status, reason, source, and approval history."/>}
+ </main></div>
 }
