@@ -26,7 +26,7 @@ app.post('/api/resident/maintenance/:requestId/attachments',requireAuth,async(re
  const paths=Array.isArray(req.body?.paths)?req.body.paths.map(x=>String(x||'').trim()).filter(Boolean):[];
  if(!requestId)return res.status(400).json({error:'Maintenance request ID is required'});
  if(paths.length>100)return res.status(400).json({error:'A maximum of 100 photos can be attached'});
- if(paths.some(p=>!p.startsWith(req.user.id+'/')))return res.status(403).json({error:'Invalid maintenance photo path'});
+ if(paths.some(p=>!p.startsWith(`${req.user.id}/${requestId}/`)))return res.status(403).json({error:'Invalid maintenance photo path'});
  const{data:tenant}=await admin.from('tenants').select('id').eq('user_id',req.user.id).eq('resident_account_active',true).maybeSingle();
  if(!tenant)return res.status(403).json({error:'Resident account required'});
  const{data:request,error:requestError}=await admin.from('maintenance_requests').select('id,tenant_id,owner_id,photo_urls').eq('id',requestId).eq('tenant_id',tenant.id).maybeSingle();
