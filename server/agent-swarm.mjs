@@ -49,10 +49,54 @@ async function ledgerReconciliation(task){
   const paid=(payments||[]).reduce((s,x)=>s+num(x.amount),0),chargeAmount=num(charge.amount);
   return {state:'reconciled',payment_id:p.id,rent_charge_id:p.rent_charge_id,charge_amount:chargeAmount,recorded_payments:paid,remaining:Math.max(0,chargeAmount-paid),overage:Math.max(0,paid-chargeAmount)};
 }
+async function addRequestAction(ownerId,requestId,type,summary,metadata={}){
+  const key=String(metadata.escalation_key||type);
+  const {data:existing,error:readError}=await admin.from('ai_actions').select('id').eq('owner_id',ownerId).eq('action_type',type).eq('entity_id',requestId).contains('metadata',{escalation_key:key}).maybeSingle();
+  if(readError)throw readError;if(existing)return existing.id;
+  const {data,error}=await admin.from('ai_actions').insert({owner_id:ownerId,action_type:type,entity_type:'maintenance_request',entity_id:requestId,status:'pending',summary,metadata:{...metadata,escalation_key:key,deterministic:true}}).select('id').single();
+  if(error)throw error;return data.id;
+}
 async function repairTracker(task){
-  let q=admin.from('maintenance_requests').select('id,status,priority,vendor_id,created_at,updated_at,scheduled_for').eq('owner_id',task.owner_id);if(task.entity_id)q=q.eq('id',task.entity_id);
-  const {data,error}=await q;if(error)throw error;const rows=(data||[]).filter(x=>openStatus(x.status)),now=Date.now();
-  return {open_count:rows.length,unassigned_count:rows.filter(x=>!x.vendor_id).length,urgent_unassigned_count:rows.filter(x=>!x.vendor_id&&['urgent','emergency','high'].includes(norm(x.priority))).length,oldest_open_hours:rows.length?Math.max(...rows.map(x=>(now-new Date(x.created_at).getTime())/3600000)):0};
+  let q=admin.from('maintenance_requests').select('id,title,status,priority,vendor_id,tenant_id,property_id,unit_id,created_at,updated_at,scheduled_for').eq('owner_id',task.owner_id);
+  if(task.entity_id)q=q.eq('id',task.entity_id);
+  const {data,error}=await q;if(error)throw error;
+  const rows=(data||[]).filter(x=>openStatus(x.status)),now=Date.now();
+  let escalations=0,awaitingVendor=0,overdueSchedule=0,staleInProgress=0;
+  for(const req of rows){
+    const ageHours=(now-new Date(req.created_at).getTime())/3600000;
+    if(!req.vendor_id&&urgent(req)&&ageHours>=0.5){
+      escalations++;
+      await addRequestAction(task.owner_id,req.id,'nova_maintenance_escalation',`Urgent maintenance request still has no assigned vendor: ${req.title||'repair request'}.`,{escalation_key:'urgent_unassigned',priority:req.priority,property_id:req.property_id,unit_id:req.unit_id,human_approval_required:true});
+    }
+    if(req.vendor_id){
+      const {data:vr,error:ve}=await admin.from('maintenance_vendor_responses').select('status,requested_at,responded_at,last_followup_at,vendor_id').eq('maintenance_request_id',req.id).eq('vendor_id',req.vendor_id).maybeSingle();
+      if(ve)throw ve;
+      if(vr?.status==='awaiting_response'){
+        awaitingVendor++;
+        const waitingHours=(now-new Date(vr.requested_at).getTime())/3600000;
+        if(waitingHours>=2){
+          escalations++;
+          await addRequestAction(task.owner_id,req.id,'nova_vendor_response_overdue',`Assigned vendor has not recorded a response for ${Math.floor(waitingHours)} hour${Math.floor(waitingHours)===1?'':'s'}: ${req.title||'maintenance request'}.`,{escalation_key:`vendor_wait_${new Date(vr.requested_at).toISOString()}`,vendor_id:req.vendor_id,waiting_hours:waitingHours,human_approval_required:true});
+          await admin.from('maintenance_vendor_responses').update({last_followup_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('maintenance_request_id',req.id).eq('vendor_id',req.vendor_id);
+        }
+      }
+      if(vr?.status==='declined'){
+        escalations++;
+        await addRequestAction(task.owner_id,req.id,'nova_vendor_declined',`Assigned vendor declined this maintenance request: ${req.title||'repair request'}. Choose another approved vendor.`,{escalation_key:`vendor_declined_${req.vendor_id}`,vendor_id:req.vendor_id,human_approval_required:true});
+      }
+    }
+    if(req.scheduled_for&&req.status==='scheduled'&&new Date(req.scheduled_for).getTime()+2*3600000<now){
+      overdueSchedule++;
+      escalations++;
+      await addRequestAction(task.owner_id,req.id,'nova_repair_schedule_overdue',`Scheduled maintenance has not moved to in progress: ${req.title||'repair request'}.`,{escalation_key:`schedule_overdue_${req.scheduled_for}`,scheduled_for:req.scheduled_for,human_approval_required:true});
+    }
+    if(req.status==='in_progress'&&(now-new Date(req.updated_at).getTime())/3600000>=24){
+      staleInProgress++;
+      escalations++;
+      await addRequestAction(task.owner_id,req.id,'nova_repair_status_stale',`Repair has been in progress without a recorded update for at least 24 hours: ${req.title||'repair request'}.`,{escalation_key:`in_progress_stale_${new Date(req.updated_at).toISOString().slice(0,13)}`,human_approval_required:true});
+    }
+  }
+  return {open_count:rows.length,unassigned_count:rows.filter(x=>!x.vendor_id).length,urgent_unassigned_count:rows.filter(x=>!x.vendor_id&&urgent(x)).length,awaiting_vendor_response:awaitingVendor,overdue_schedule:overdueSchedule,stale_in_progress:staleInProgress,escalations_created:escalations,oldest_open_hours:rows.length?Math.max(...rows.map(x=>(now-new Date(x.created_at).getTime())/3600000)):0};
 }
 async function priorityFilter(task){
   const req=await getMaintenance(task.entity_id);if(!req)return {state:'maintenance_missing'};
@@ -160,6 +204,31 @@ Issue type: ${req.issue_type||''}`;
   if(needsHuman)await addAction(task,'nova_maintenance_safety_review',`Photo triage marked this maintenance request ${severity}. Review the images and findings before safety-sensitive action.`,{property_id:req.property_id,unit_id:req.unit_id,safety_flags:hazards,severity,confidence,human_approval_required:true,vision_completed:true,model:VISION_MODEL});
   return {state:'vision_complete',severity,confidence,recommended_trade:recommendedTrade,possible_hazards:hazards,requires_human_review:needsHuman,model:VISION_MODEL};
 }
+async function feedbackCollector(task){
+  const req=await getMaintenance(task.entity_id);if(!req)return {state:'maintenance_missing'};
+  if(req.status!=='completed')return {state:'not_completed',status:req.status};
+  const now=new Date().toISOString();
+  const {data:feedback,error:fe}=await admin.from('maintenance_feedback').upsert({
+    owner_id:req.owner_id,maintenance_request_id:req.id,tenant_id:req.tenant_id,status:'pending',requested_at:now,updated_at:now
+  },{onConflict:'maintenance_request_id'}).select('id,status').single();
+  if(fe)throw fe;
+  if(req.tenant_id){
+    const {data:lease,error:le}=await admin.from('leases').select('id').eq('tenant_id',req.tenant_id).eq('unit_id',req.unit_id).order('created_at',{ascending:false}).limit(1).maybeSingle();
+    if(le)throw le;
+    const marker=`maintenance_feedback:${req.id}`;
+    const {data:existing,error:me}=await admin.from('messages').select('id').eq('owner_id',req.owner_id).eq('tenant_id',req.tenant_id).eq('category',marker).maybeSingle();
+    if(me)throw me;
+    if(!existing){
+      const {error:ie}=await admin.from('messages').insert({
+        owner_id:req.owner_id,tenant_id:req.tenant_id,lease_id:lease?.id||null,direction:'outbound',channel:'app',
+        body:`Your maintenance request “${req.title||'repair request'}” was marked completed. Please rate the repair in your Resident Portal when you have a moment.`,
+        category:marker
+      });if(ie)throw ie;
+    }
+  }
+  await addRequestAction(req.owner_id,req.id,'nova_feedback_requested',`Post-repair feedback requested for: ${req.title||'maintenance request'}.`,{escalation_key:`feedback_requested_${feedback.id}`,feedback_id:feedback.id,tenant_id:req.tenant_id});
+  return {state:'feedback_requested',feedback_id:feedback.id,tenant_id:req.tenant_id};
+}
 async function tenantWelcomer(task){
   const {data:lease,error}=await admin.from('leases').select('id,tenant_id,unit_id,status,start_date').eq('id',task.entity_id).maybeSingle();if(error)throw error;if(!lease)return {state:'lease_missing'};
   const {data:tenant,error:te}=await admin.from('tenants').select('id,resident_account_active,user_id,email').eq('id',lease.tenant_id).maybeSingle();if(te)throw te;
@@ -182,7 +251,7 @@ async function execute(task){
   switch(task.agent_key){
     case 'balance_auditor':case 'reminder_dispatcher':case 'promise_followup':return await runRentFollowups();
     case 'ledger_reconciliation':return await ledgerReconciliation(task);
-    case 'repair_tracker':return await repairTracker(task);
+    case 'repair_tracker':return await repairTracker(task);\n    case 'feedback_collector':return await feedbackCollector(task);
     case 'priority_filter':return await priorityFilter(task);
     case 'vendor_dispatch':return await vendorDispatch(task);
     case 'damage_triage':return await damageTriage(task);
