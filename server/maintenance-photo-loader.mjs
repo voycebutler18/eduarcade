@@ -1,18 +1,5 @@
-export async function maintenanceImageDataUrl(admin,value){
-  const raw=String(value||'').trim();
-  if(!raw)throw new Error('maintenance photo path is empty');
-  let blob;
-  if(/^https?:\/\//i.test(raw)){
-    const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),15000);
-    try{const r=await fetch(raw,{signal:ctrl.signal,redirect:'follow'});if(!r.ok)throw new Error('image fetch HTTP '+r.status);blob=await r.blob()}finally{clearTimeout(timer)}
-  }else{
-    const {data,error}=await admin.storage.from('maintenance-photos').download(raw);
-    if(error)throw new Error('maintenance storage download failed: '+error.message);
-    blob=data;
-  }
-  const type=String(blob.type||'').split(';')[0].trim().toLowerCase();
-  if(!type.startsWith('image/'))throw new Error('maintenance photo is not an image');
-  const ab=await blob.arrayBuffer();
-  if(ab.byteLength>12*1024*1024)throw new Error('maintenance photo exceeds 12MB vision limit');
-  return `data:${type};base64,${Buffer.from(ab).toString('base64')}`;
-}
+import {createClient} from '@supabase/supabase-js';
+const nativeFetch=globalThis.fetch.bind(globalThis);
+const db=process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
+export async function maintenanceImageDataUrl(admin,value){const raw=String(value||'').trim();if(!raw)throw new Error('maintenance photo path is empty');let blob;if(/^https?:\/\//i.test(raw)){const r=await nativeFetch(raw);if(!r.ok)throw new Error('image fetch HTTP '+r.status);blob=await r.blob()}else{const{data,error}=await admin.storage.from('maintenance-photos').download(raw);if(error)throw new Error('maintenance storage download failed: '+error.message);blob=data}const type=String(blob.type||'').split(';')[0].trim().toLowerCase();if(!type.startsWith('image/'))throw new Error('maintenance photo is not an image');const ab=await blob.arrayBuffer();if(ab.byteLength>12*1024*1024)throw new Error('maintenance photo exceeds 12MB vision limit');return `data:${type};base64,${Buffer.from(ab).toString('base64')}`}
+export function installMaintenanceStorageFetch(){if(!db)return;globalThis.fetch=async(input,init)=>{const value=typeof input==='string'?input:'';if(value&&!/^https?:\/\//i.test(value)&&!/^data:/i.test(value)){const{data,error}=await db.storage.from('maintenance-photos').download(value);if(error)return new Response(error.message,{status:404});return new Response(data,{status:200,headers:{'content-type':data.type||'application/octet-stream'}})}return nativeFetch(input,init)}}
