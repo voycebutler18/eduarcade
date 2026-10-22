@@ -3,16 +3,16 @@ import type {Session} from "@supabase/supabase-js";
 import {supabase} from "../lib/supabase";
 import {askRentPilot} from "../lib/ai";
 
-type Notice={id:string;type:string;title:string;body:string;created_at:string};
+type Notice={id:string;type:string;title:string;body:string;created_at:string;entity_type?:string|null;entity_id?:string|null};
 type Action={id:string;action_type:string;status:string;summary:string;created_at:string};
 
-export function NovaAssistant({session,onOpenAI,onOpenInbox}:{session:Session;onOpenAI:()=>void;onOpenInbox:()=>void}){
+export function NovaAssistant({session,onOpenAI,onOpenInbox}:{session:Session;onOpenAI:()=>void;onOpenInbox:(tenantId?:string)=>void}){
  const[open,setOpen]=useState(false),[tab,setTab]=useState<"feed"|"chat">("feed"),[notices,setNotices]=useState<Notice[]>([]),[actions,setActions]=useState<Action[]>([]),[question,setQuestion]=useState(""),[chat,setChat]=useState<{role:"user"|"nova";text:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState("");
  const[lastSeen,setLastSeen]=useState(()=>localStorage.getItem("rentpilot_nova_seen")||"1970-01-01T00:00:00.000Z");
 
  async function load(){
   const[n,a]=await Promise.all([
-   supabase.from("notifications").select("id,type,title,body,created_at").order("created_at",{ascending:false}).limit(60),
+   supabase.from("notifications").select("id,type,title,body,created_at,entity_type,entity_id").order("created_at",{ascending:false}).limit(60),
    supabase.from("ai_actions").select("id,action_type,status,summary,created_at").order("created_at",{ascending:false}).limit(40)
   ]);
   if(n.error)setError(n.error.message);else setNotices((n.data||[]) as Notice[]);
@@ -30,6 +30,16 @@ export function NovaAssistant({session,onOpenAI,onOpenInbox}:{session:Session;on
 
  const unread=useMemo(()=>notices.filter(n=>n.created_at>lastSeen).length,[notices,lastSeen]);
  function markSeen(){const now=new Date().toISOString();localStorage.setItem("rentpilot_nova_seen",now);setLastSeen(now)}
+ async function openNoticeInbox(n:Notice){
+  try{
+   if(n.entity_type==="maintenance_request"&&n.entity_id){
+    const{data,error}=await supabase.from("maintenance_requests").select("tenant_id").eq("id",n.entity_id).maybeSingle();
+    if(error)throw error;
+    setOpen(false);onOpenInbox(data?.tenant_id||undefined);return;
+   }
+  }catch(e:any){setError(e?.message||"Unable to open resident inbox")}
+  setOpen(false);onOpenInbox();
+ }
 
  async function snapshot(){
   const[p,u,t,l,c,pay,pr,m,msg,fu]=await Promise.all([
@@ -67,7 +77,7 @@ export function NovaAssistant({session,onOpenAI,onOpenInbox}:{session:Session;on
    <div className="nova-tabs"><button className={tab==="feed"?"active":""} onClick={()=>{setTab("feed");markSeen()}}>Updates{unread>0&&<span>{unread}</span>}</button><button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}>Chat</button></div>
    {error&&<div className="nova-error">{error}</div>}
    {tab==="feed"?<div className="nova-feed">
-    {notices.length?notices.map(n=><article className="nova-card" key={n.id}><div className="nova-card-top"><span className="nova-type">{n.type?.replaceAll("_"," ")||"update"}</span><time>{new Date(n.created_at).toLocaleString()}</time></div><b>{n.title}</b><p>{n.body}</p>{n.type==="maintenance"&&<button onClick={onOpenInbox}>Open inbox</button>}</article>):<div className="nova-empty"><b>No NOVA updates yet</b><p>Verified actions and alerts will appear here automatically.</p></div>}
+    {notices.length?notices.map(n=><article className="nova-card" key={n.id}><div className="nova-card-top"><span className="nova-type">{n.type?.replaceAll("_"," ")||"update"}</span><time>{new Date(n.created_at).toLocaleString()}</time></div><b>{n.title}</b><p>{n.body}</p>{n.type==="maintenance"&&<button onClick={()=>openNoticeInbox(n)}>Open {n.body?.split(" · ")[0]||"resident"} inbox</button>}</article>):<div className="nova-empty"><b>No NOVA updates yet</b><p>Verified actions and alerts will appear here automatically.</p></div>}
     {actions.length>0&&<button className="nova-full-activity" onClick={onOpenAI}>View full AI activity →</button>}
    </div>:<div className="nova-chat">
     <div className="nova-chat-scroll">{chat.length?chat.map((m,i)=><div key={i} className={m.role==="user"?"nova-msg user":"nova-msg"}><b>{m.role==="user"?"You":"NOVA"}</b><p>{m.text}</p></div>):<div className="nova-empty"><b>Ask NOVA anything about RentPilot</b><p>Try “What needs my attention today?” or “What did RentPilot do automatically?”</p></div>}{busy&&<div className="nova-thinking">NOVA is checking live records…</div>}</div>
