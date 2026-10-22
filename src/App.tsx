@@ -1,405 +1,112 @@
-// src/App.tsx
-import * as THREE from "three";
-import { Canvas } from "@react-three/fiber";
-import { Sky, ContactShadows } from "@react-three/drei";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { QuizGate, QuizGateResult } from "./features/quiz/QuizGate";
-import ProfileBar from "./features/profile/ProfileBar";
-import { useAge, useUsername } from "./state/profile";
-import StorePanel from "./features/store/StorePanel";
-import AvatarStudio from "./features/avatar/AvatarStudio";
-import BuildWorlds from "./features/build/BuildWorlds";
-import ChatPanel from "./features/chat/ChatPanel";
-import DailySpin from "./features/rewards/DailySpin";
-import QuestsPanel from "./features/quests/QuestsPanel";
-import ProgressCard from "./features/progress/ProgressCard";
-import HeroRig3D from "./features/avatar/HeroRig3D";
-import { useAvatar } from "./state/avatar";
+type View = "overview" | "properties" | "tenants" | "money" | "maintenance" | "inbox" | "vendors" | "ai";
 
-import { useSchedule, startBellLoop, stopBellLoop } from "./state/schedule";
-import ClassroomPortal from "./features/classroom/ClassroomPortal";
+const nav: { id: View; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "properties", label: "Properties" },
+  { id: "tenants", label: "Tenants" },
+  { id: "money", label: "Money Chaser" },
+  { id: "maintenance", label: "Maintenance" },
+  { id: "inbox", label: "Inbox" },
+  { id: "vendors", label: "Vendors" },
+  { id: "ai", label: "AI Activity" },
+];
 
-// World + player
-import OutdoorWorld3D, { type Collider } from "./features/campus/OutdoorWorld3D";
-import GlideController from "./features/player/GlideController";
-import FollowCam from "./features/player/FollowCam";
+const overdue = [
+  { tenant: "James W.", unit: "Oak Terrace · 2B", amount: 1600, days: 6, status: "Promise Friday" },
+  { tenant: "Maria R.", unit: "Pine Court · 1A", amount: 1425, days: 4, status: "Reminder sent" },
+  { tenant: "David K.", unit: "Oak Terrace · 4C", amount: 800, days: 2, status: "Partial payment" },
+];
 
-// Controls & helpers
-import Thumbstick from "./features/controls/Thumbstick";
-import EnsureCanvasFocus from "./features/controls/EnsureCanvasFocus";
-import SprintModifier from "./features/controls/SprintModifier";
-import MobileJumpButton from "./features/controls/MobileJumpButton";
+const maintenance = [
+  { issue: "Active kitchen leak", unit: "Oak Terrace · 2B", priority: "Emergency", status: "Vendor contacted" },
+  { issue: "AC not cooling", unit: "Pine Court · 3A", priority: "High", status: "Awaiting approval" },
+  { issue: "Bedroom door latch", unit: "Oak Terrace · 1C", priority: "Routine", status: "Scheduled" },
+];
 
-let Campus3D: any;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  Campus3D = require("./features/campus/Campus3D").default;
-} catch {
-  Campus3D = function CampusPlaceholder() {
-    return null;
-  };
+function MoneyChaser() {
+  return <section className="panel-card">
+    <div className="section-head"><div><p className="eyebrow">Revenue recovery</p><h2>Money Chaser</h2></div><button className="primary-btn">Run follow-ups</button></div>
+    <div className="mini-grid">
+      <div className="metric"><span>Outstanding</span><strong>$3,825</strong><small>Across 3 tenants</small></div>
+      <div className="metric"><span>Promises to pay</span><strong>$1,600</strong><small>1 promise active</small></div>
+      <div className="metric"><span>Recovered this month</span><strong>$2,940</strong><small>AI-assisted follow-up</small></div>
+    </div>
+    <div className="table-wrap"><table><thead><tr><th>Tenant</th><th>Unit</th><th>Balance</th><th>Late</th><th>Status</th><th></th></tr></thead>
+    <tbody>{overdue.map(row => <tr key={row.tenant}><td><b>{row.tenant}</b></td><td>{row.unit}</td><td>{"$" + row.amount.toLocaleString()}</td><td>{row.days} days</td><td><span className="pill warn">{row.status}</span></td><td><button className="ghost-btn">Open</button></td></tr>)}</tbody></table></div>
+  </section>
 }
 
-/* ---------------- Tabs ---------------- */
-type Tab = "play" | "build" | "avatar" | "store";
-const TAB_HASH: Record<Tab, `#/${Tab}`> = {
-  play: "#/play",
-  build: "#/build",
-  avatar: "#/avatar",
-  store: "#/store",
-};
-const hashToTab = (h: string): Tab => {
-  const v = h.replace(/^#\//, "") as Tab;
-  return (["play", "build", "avatar", "store"] as Tab[]).includes(v) ? v : "play";
-};
-
-/* tiny on-screen schedule HUD */
-function ScheduleHUD() {
-  const { periods, activePeriodId, nextBellTs, canBuild } = useSchedule();
-  const active = periods.find((p) => p.id === activePeriodId);
-  const building = canBuild();
-
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  let timeLeft = "--:--";
-  if (nextBellTs) {
-    const ms = Math.max(0, nextBellTs - now);
-    const m = Math.floor(ms / 60000);
-    const s = Math.floor((ms % 60000) / 1000);
-    timeLeft = `${m}:${s.toString().padStart(2, "0")}`;
-  }
-
-  return (
-    <div className="pointer-events-none fixed left-4 top-4 z-50 grid gap-1 rounded-xl bg-black/55 px-3 py-2 text-white backdrop-blur-sm">
-      <div className="text-xs uppercase tracking-wide opacity-80">Current Period</div>
-      <div className="text-lg font-semibold leading-none">{active?.label ?? "—"}</div>
-      <div className="text-xs opacity-80">Next bell in: {timeLeft}</div>
-      <div
-        className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs ${
-          building ? "bg-emerald-500/80" : "bg-rose-500/80"
-        }`}
-      >
-        {building ? "Free Build Unlocked" : "Complete 5 Questions to Build"}
-      </div>
-    </div>
-  );
+function Maintenance() {
+  return <section className="panel-card">
+    <div className="section-head"><div><p className="eyebrow">Operations</p><h2>Maintenance AI</h2></div><button className="primary-btn">New request</button></div>
+    <div className="cards-list">{maintenance.map((item) => <article className="ticket" key={item.issue}>
+      <div><span className={item.priority === "Emergency" ? "priority emergency" : item.priority === "High" ? "priority high" : "priority"}>{item.priority}</span><h3>{item.issue}</h3><p>{item.unit}</p></div>
+      <div className="ticket-side"><span>{item.status}</span><button className="ghost-btn">Review</button></div>
+    </article>)}</div>
+  </section>
 }
 
-/* Build tab guard */
-function BuildGuard({ children }: { children: React.ReactNode }) {
-  const { canBuild } = useSchedule();
-  const unlocked = canBuild();
-  if (unlocked) return <>{children}</>;
-  return (
-    <div
-      style={{
-        position: "relative",
-        border: "1px solid rgba(255,255,255,.08)",
-        background: "#0b1222",
-        color: "#e6edf7",
-        borderRadius: 14,
-        padding: 16,
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>Build Locked</div>
-      <p style={{ margin: 0, color: "#9fb0c7", fontSize: 14 }}>
-        Get a perfect <b>5/5</b> in your current class to unlock free build until the next bell. You can also wait for
-        the bell to change periods.
-      </p>
-    </div>
-  );
+function Placeholder({title, copy}:{title:string; copy:string}) {
+  return <section className="panel-card empty-state"><p className="eyebrow">RentPilot AI</p><h2>{title}</h2><p>{copy}</p><button className="primary-btn">Add first item</button></section>
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>(() => hashToTab(window.location.hash || "#/play"));
-  useEffect(() => {
-    const onHash = () => setTab(hashToTab(window.location.hash || "#/play"));
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-  const go = (t: Tab) => {
-    const h = TAB_HASH[t];
-    if (location.hash !== h) location.hash = h;
-    setTab(t);
-  };
+  const [view, setView] = useState<View>("overview");
+  const current = useMemo(() => nav.find(n => n.id === view)?.label ?? "Overview", [view]);
 
-  // start/stop bell loop
-  useEffect(() => {
-    startBellLoop(1000);
-    return () => stopBellLoop();
-  }, []);
+  return <div className="shell">
+    <aside className="sidebar">
+      <div className="logo"><div className="logo-mark">R</div><div><strong>RentPilot AI</strong><span>Property operations</span></div></div>
+      <nav>{nav.map(item => <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>{item.label}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="ai-chip"><span className="pulse"></span><div><b>AI is active</b><small>7 actions today</small></div></div><button className="nav-item">Settings</button></div>
+    </aside>
 
-  const [quizOpen, setQuizOpen] = useState(false);
-  const [lastQuiz, setLastQuiz] = useState<QuizGateResult | null>(null);
-  const cleared = lastQuiz?.passed ?? false;
+    <main className="main">
+      <header className="topbar"><div><p className="eyebrow">Workspace</p><h1>{current}</h1></div><div className="top-actions"><button className="ghost-btn">Ask AI</button><button className="primary-btn">+ Add property</button><div className="avatar">PB</div></div></header>
 
-  const age = useAge();
-  const username = useUsername();
+      {view === "overview" && <>
+        <section className="hero"><div><p className="eyebrow">Portfolio pulse</p><h2>Your properties are under control.</h2><p>RentPilot is tracking revenue, tenant communication, and maintenance in one place.</p></div><div className="health"><span>Portfolio health</span><strong>92%</strong><small>2 items need approval</small></div></section>
+        <section className="stat-grid">
+          <article><span>Expected rent</span><strong>$28,450</strong><small>This month</small></article>
+          <article><span>Collected</span><strong>$24,625</strong><small className="good">86.6% collected</small></article>
+          <article><span>Outstanding</span><strong>$3,825</strong><small className="bad">3 tenants overdue</small></article>
+          <article><span>Open maintenance</span><strong>4</strong><small>1 emergency</small></article>
+        </section>
 
-  const [queueing, setQueueing] = useState(false);
-  function mockQueue() {
-    if (age == null) return alert("Set your birthday in the Profile bar to enable age-band matchmaking.");
-    if (!cleared) {
-      setQuizOpen(true);
-      return;
-    }
-    setQueueing(true);
-    setTimeout(() => {
-      setQueueing(false);
-      alert(`✅ Joined mock lobby for age band ${age - 1}–${age + 1}. (Realtime next.)`);
-    }, 1200);
-  }
-
-  const [studioOpen, setStudioOpen] = useState(false);
-  const { preset } = useAvatar();
-  const [schoolMode, setSchoolMode] = useState(false);
-
-  // scene switching (Play)
-  const [scene, setScene] = useState<"outdoor" | "campus">("outdoor");
-  const [outdoorColliders, setOutdoorColliders] = useState<Collider[]>([]);
-
-  // refs for thumbstick + player + movement state
-  const playerRef = useRef<THREE.Object3D | null>(null);
-  const stickDirRef = useRef<{ x: number; z: number } | null>(null);
-  const manualYawRef = useRef<number | null>(null);   // freeze facing when set
-  const lastAngleRef = useRef<number | null>(null);   // remember last stick angle
-
-  // (still here if you later re-enable sprint/jump physics controller)
-  const speedRef = useRef<number>(6);
-  const jumpRef = useRef<boolean>(false);
-  const jumpHeldRef = useRef<boolean>(false);
-
-  function enterSchool() { setScene("campus"); }
-  function enterPlot(_plotId: string) { go("build"); }
-  function handleStartLesson(_classId: string) {}
-  function handleEndLesson(_classId: string) {}
-
-  // Play scene (Outdoor vs Campus)
-  function PlayScene() {
-    if (scene === "outdoor") {
-      return (
-        <>
-          <OutdoorWorld3D
-            onEnterSchool={enterSchool}
-            onEnterPlot={enterPlot}
-            myPlotId="P1"
-            onReadyColliders={setOutdoorColliders}
-          />
-
-          {/* Player + avatar with GlideController */}
-          <GlideController
-            key="player-main"
-            start={{ x: 0, z: 8 }}
-            accel={18}
-            damping={2.2}
-            maxSpeed={8}
-            inputDirRef={stickDirRef}
-            manualYawRef={manualYawRef}
-            nodeRef={playerRef}
-          >
-            {/* Raise the rig so feet aren't inside ground */}
-            <group position={[0, 0.4, 0]} scale={0.95}>
-              <HeroRig3D preset={preset} />
-            </group>
-          </GlideController>
-
-          {/* Follow camera */}
-          <FollowCam targetRef={playerRef} offset={[0, 4.5, 8]} lerp={0.12} />
-        </>
-      );
-    }
-    return <Campus3D onEnter={(cid: string) => console.log("enter class", cid)} />;
-  }
-
-  // Backdrop for non-Play tabs (keeps your avatar preview)
-  function NonPlayBackdrop() {
-    return (
-      <>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[40, 40]} />
-          <meshStandardMaterial color={"#cfd7df"} roughness={0.95} metalness={0} />
-        </mesh>
-        <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={12} blur={2.4} far={8} />
-        <group position={[0, 0, 0]}>
-          <HeroRig3D preset={preset} />
-        </group>
-      </>
-    );
-  }
-
-  return (
-    <div className="app">
-      <ScheduleHUD />
-
-      <header className="topbar">
-        <div className="brand">EduVerse Arena</div>
-        <nav className="tabs">
-          <button className={tab === "play" ? "tab active" : "tab"} onClick={() => go("play")}>
-            Play
-          </button>
-          <button className={tab === "build" ? "tab active" : "tab"} onClick={() => go("build")}>
-            Build Worlds
-          </button>
-          <button className={tab === "avatar" ? "tab active" : "tab"} onClick={() => go("avatar")}>
-            Create-Your-Hero
-          </button>
-          <button className={tab === "store" ? "tab active" : "tab"} onClick={() => go("store")}>
-            Store
-          </button>
-        </nav>
-      </header>
-
-      <div style={{ padding: "10px 14px" }}>
-        <ProfileBar />
-      </div>
-
-      <section className="stage">
-        <Canvas
-          shadows
-          camera={{ position: [3.5, 3.0, 3.5], fov: 55 }}
-          gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
-        >
-          {/* lighting */}
-          <ambientLight intensity={0.5} />
-          <directionalLight
-            position={[5, 8, 5]}
-            intensity={1.2}
-            castShadow
-            shadow-mapSize-width={2048}
-            shadow-mapSize-height={2048}
-          />
-          <Sky sunPosition={[100, 20, 100]} />
-
-          {tab === "play" ? <PlayScene /> : <NonPlayBackdrop />}
-
-          {/* Ensure the canvas grabs keyboard focus */}
-          <EnsureCanvasFocus />
-        </Canvas>
-
-        {/* Thumbstick overlay (with facing freeze on release) */}
-        {tab === "play" && (
-          <div style={{ position: "fixed", left: 0, bottom: 0, zIndex: 60 }}>
-            <Thumbstick
-              onChange={(dir) => {
-                if (dir) {
-                  // moving: let input control yaw and remember the last angle
-                  manualYawRef.current = null;
-                  stickDirRef.current = dir;
-                  lastAngleRef.current = Math.atan2(dir.x, dir.z);
-                } else {
-                  // released: stop input and freeze yaw to last angle
-                  stickDirRef.current = { x: 0, z: 0 };
-                  if (lastAngleRef.current != null) {
-                    manualYawRef.current = lastAngleRef.current;
-                  }
-                }
-              }}
-            />
+        <section className="dashboard-grid">
+          <div className="panel-card">
+            <div className="section-head"><div><p className="eyebrow">Needs attention</p><h2>Priority queue</h2></div><span className="count">5</span></div>
+            <div className="attention">
+              <button><span className="dot red"></span><div><b>3 overdue tenants</b><small>$3,825 total outstanding</small></div><strong>→</strong></button>
+              <button><span className="dot red"></span><div><b>Emergency plumbing request</b><small>Oak Terrace · Unit 2B</small></div><strong>→</strong></button>
+              <button><span className="dot amber"></span><div><b>2 payment promises</b><small>Next promise due Friday</small></div><strong>→</strong></button>
+              <button><span className="dot amber"></span><div><b>2 leases expiring soon</b><small>Within 60 days</small></div><strong>→</strong></button>
+            </div>
           </div>
-        )}
 
-        {/* Sprint & mobile jump controls (kept for future physics controller) */}
-        {tab === "play" && (
-          <>
-            <SprintModifier speedRef={speedRef} baseSpeed={6} sprintSpeed={10} />
-            <MobileJumpButton jumpRef={jumpRef} jumpHeldRef={jumpHeldRef} />
-          </>
-        )}
-
-        <aside className="panel">
-          {tab === "play" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div>
-                <h2>Party Playlists</h2>
-                <ul className="list">
-                  <li>🏁 Party Runs (Obby sprints)</li>
-                  <li>🧩 Team Trials (Co-op puzzles)</li>
-                </ul>
-                <button className="primary" onClick={mockQueue}>
-                  {queueing ? "Queueing…" : cleared ? "Queue (Cleared)" : "Queue (5-Q Skill Check)"}
-                </button>
-                <p className="muted small" style={{ marginTop: 8 }}>
-                  {cleared ? `Cleared • ${lastQuiz?.subject} (${lastQuiz?.correctCount}/5)` : "Pass 5/5 to queue."}
-                </p>
-              </div>
-
-              <QuestsPanel />
-
-              {/* School campus shortcuts (UI) */}
-              <div style={{ marginTop: 6 }}>
-                <h3 style={{ margin: "6px 0 8px" }}>School Campus</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <ClassroomPortal classId="HOMEROOM" label="Homeroom" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="MATH" label="Math" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="ELA" label="ELA / Reading" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="SCI" label="Science" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="SOC" label="Social Studies" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="LUNCH" label="Lunch" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                  <ClassroomPortal classId="ELECT" label="Elective" onStartLesson={handleStartLesson} onEndLesson={handleEndLesson} />
-                </div>
-              </div>
-
-              <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="checkbox" checked={schoolMode} onChange={(e) => setSchoolMode(e.target.checked)} />
-                Enable School Mode (tight chat, no voice)
-              </label>
-
-              <ChatPanel username={username || "Player"} schoolMode={schoolMode} />
-
-              <div>
-                <h3 style={{ margin: "8px 0 6px" }}>Printable Progress</h3>
-                <ProgressCard />
-              </div>
+          <div className="panel-card">
+            <div className="section-head"><div><p className="eyebrow">Autopilot</p><h2>AI activity today</h2></div><span className="live">LIVE</span></div>
+            <div className="activity">
+              <div><span>14</span><p><b>Rent reminders sent</b><small>3 tenants responded</small></p></div>
+              <div><span>4</span><p><b>Maintenance requests triaged</b><small>1 escalated for approval</small></p></div>
+              <div><span>2</span><p><b>Vendors contacted</b><small>1 appointment booked</small></p></div>
+              <div><span>2</span><p><b>Payment promises logged</b><small>$2,425 scheduled</small></p></div>
             </div>
-          )}
+          </div>
+        </section>
 
-          {tab === "build" && (
-            <BuildGuard>
-              <BuildWorlds />
-            </BuildGuard>
-          )}
+        <MoneyChaser />
+      </>}
 
-          {tab === "avatar" && (
-            <div>
-              <h2>Create-Your-Hero</h2>
-              <p>Live 3D avatar editor (body, skin, hair, eyes, outfits, trails, win FX).</p>
-              <button className="primary" onClick={() => setStudioOpen(true)}>
-                Open Studio
-              </button>
-            </div>
-          )}
-
-          {tab === "store" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <DailySpin />
-              <StorePanel />
-            </div>
-          )}
-        </aside>
-      </section>
-
-      <footer className="footer">
-        <span>Prototype • Vite + React + R3F</span>
-      </footer>
-
-      <QuizGate
-        open={studioOpen ? false : quizOpen}
-        onClose={(res) => {
-          if (!res) {
-            setQuizOpen(false);
-            return;
-          }
-          setLastQuiz(res);
-          setQuizOpen(false);
-        }}
-      />
-
-      <AvatarStudio open={studioOpen} onClose={() => setStudioOpen(false)} />
-    </div>
-  );
+      {view === "money" && <MoneyChaser />}
+      {view === "maintenance" && <Maintenance />}
+      {view === "properties" && <Placeholder title="Properties" copy="Add rental properties, units, occupancy, rent targets, and operational status." />}
+      {view === "tenants" && <Placeholder title="Tenants" copy="Tenant profiles will connect leases, balances, payment promises, maintenance, and messages." />}
+      {view === "inbox" && <Placeholder title="Property Inbox" copy="One inbox for tenant questions, payment conversations, maintenance updates, and AI-assisted replies." />}
+      {view === "vendors" && <Placeholder title="Vendors" copy="Track approved vendors, trades, service areas, availability, quotes, and job history." />}
+      {view === "ai" && <Placeholder title="AI Activity" copy="Every automated action will be logged here with status, reason, source, and approval history." />}
+    </main>
+  </div>;
 }
