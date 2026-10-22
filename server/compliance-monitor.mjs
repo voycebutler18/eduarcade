@@ -57,9 +57,12 @@ function evaluateRules(rules={},p,profile){
   return true;
 }
 async function addNotice(ownerId,propertyId,type,title,body,matchId=null,dueAt=null){
-  const row={owner_id:ownerId,property_id:propertyId,match_id:matchId,notification_type:type,title,body,due_at:dueAt};
-  const {error}=await admin.from('compliance_notifications').upsert(row,{onConflict:'owner_id,property_id,notification_type,title,due_at',ignoreDuplicates:true});
-  if(!error)await admin.from('notifications').insert({owner_id:ownerId,type:'compliance',entity_type:'property',entity_id:propertyId,title,body});
+  let q=admin.from('compliance_notifications').select('id').eq('owner_id',ownerId).eq('property_id',propertyId).eq('notification_type',type).eq('title',title);
+  q=dueAt?q.eq('due_at',dueAt):q.is('due_at',null);
+  const {data:existing}=await q.maybeSingle();
+  if(existing)return;
+  const {data:created,error}=await admin.from('compliance_notifications').insert({owner_id:ownerId,property_id:propertyId,match_id:matchId,notification_type:type,title,body,due_at:dueAt}).select('id').single();
+  if(!error&&created)await admin.from('notifications').insert({owner_id:ownerId,type:'compliance',entity_type:'property',entity_id:propertyId,title,body});
 }
 async function monitorSources(){
   const now=new Date().toISOString();
@@ -106,7 +109,7 @@ async function rematchVerifiedRules(){
     const {data:match,error}=await admin.from('property_compliance_matches').upsert({owner_id:p.owner_id,property_id:p.id,requirement_id:r.id,source_id:r.source_id,applicability,reason,missing_fields:missing,effective_date:r.effective_date,next_action_date:r.next_action_date,last_verified_at:r.last_verified_at,rule_version:r.rule_version,source_fingerprint:r.source_fingerprint},{onConflict:'property_id,requirement_id'}).select('id').single();
     if(error)continue;
     if(missing.length){
-      for(const f of missing)await admin.from('compliance_data_requests').upsert({owner_id:p.owner_id,property_id:p.id,requirement_id:r.id,field_name:f,prompt:`RentPilot needs ${f.replaceAll('_',' ')} to determine whether “${r.title}” applies to this property.`},{onConflict:'property_id,requirement_id,field_name',ignoreDuplicates:true});
+      for(const f of missing){const {data:open}=await admin.from('compliance_data_requests').select('id').eq('property_id',p.id).eq('requirement_id',r.id).eq('field_name',f).eq('status','open').maybeSingle();if(!open)await admin.from('compliance_data_requests').insert({owner_id:p.owner_id,property_id:p.id,requirement_id:r.id,field_name:f,prompt:`RentPilot needs ${f.replaceAll('_',' ')} to determine whether “${r.title}” applies to this property.`});}
       await addNotice(p.owner_id,p.id,'missing_information','More property information needed',`RentPilot needs ${missing.join(', ')} before it can determine whether “${r.title}” applies.`,match.id);
     }else{
       await admin.from('compliance_data_requests').update({status:'resolved',resolved_at:new Date().toISOString()}).eq('property_id',p.id).eq('requirement_id',r.id).eq('status','open');
