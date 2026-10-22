@@ -1,28 +1,26 @@
 import io, os, tempfile
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import fitz
 from paddleocr import PaddleOCR
 
 app=FastAPI(title='RentPilot Open Document Vision')
+app.add_middleware(CORSMiddleware,allow_origins=['https://rentpilot-ai.onrender.com'],allow_credentials=False,allow_methods=['POST','GET'],allow_headers=['*'])
 ocr=PaddleOCR(use_doc_orientation_classify=True,use_doc_unwarping=True,use_textline_orientation=True)
 
 def image_text(img: Image.Image):
     with tempfile.NamedTemporaryFile(suffix='.png',delete=False) as f:
-        img.convert('RGB').save(f.name)
-        path=f.name
+        img.convert('RGB').save(f.name); path=f.name
     try:
-        result=ocr.predict(path)
-        parts=[]
+        result=ocr.predict(path); parts=[]
         for page in result:
             data=getattr(page,'json',None)
             if callable(data): data=data()
             if isinstance(data,dict):
-                r=data.get('res',data)
-                texts=r.get('rec_texts',[]) if isinstance(r,dict) else []
+                r=data.get('res',data); texts=r.get('rec_texts',[]) if isinstance(r,dict) else []
                 parts.extend([str(x) for x in texts if str(x).strip()])
-            else:
-                parts.append(str(page))
+            else: parts.append(str(page))
         return '\n'.join(parts)
     finally:
         try: os.unlink(path)
