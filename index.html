@@ -10,5 +10,20 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      document.addEventListener('click', function (event) {
+        var button = event.target.closest && event.target.closest('.nova-full-activity');
+        if (!button) return;
+        setTimeout(function () {
+          var drawer = document.querySelector('.nova-drawer');
+          if (drawer) {
+            var close = drawer.querySelector('.nova-head > button');
+            if (close) close.click();
+          }
+          var activity = document.querySelector('.activity-column');
+          if (activity) activity.scrollIntoView({behavior:'smooth', block:'start'});
+        }, 120);
+      }, true);
+    </script>
   </body>
 </html>
