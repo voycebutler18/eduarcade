@@ -5,7 +5,9 @@ import {runComplianceMonitor} from './compliance-monitor.mjs';
 const URL=process.env.SUPABASE_URL;
 const KEY=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const admin=URL&&KEY?createClient(URL,KEY,{auth:{persistSession:false}}):null;
-const WORKER_ID=process.env.RENDER_INSTANCE_ID||process.env.HOSTNAME||`rentpilot-backend-${process.pid}`;\nconst GROQ_URL='https://api.groq.com/openai/v1/chat/completions';\nconst VISION_MODEL=process.env.GROQ_VISION_MODEL||'qwen/qwen3.8-27b';
+const WORKER_ID=process.env.RENDER_INSTANCE_ID||process.env.HOSTNAME||`rentpilot-backend-${process.pid}`;
+const GROQ_URL='https://api.groq.com/openai/v1/chat/completions';
+const VISION_MODEL=process.env.GROQ_VISION_MODEL||'qwen/qwen3.8-27b';
 
 function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
 function openStatus(v){return !['completed','closed','cancelled','resolved'].includes(String(v||'').toLowerCase())}
