@@ -2,6 +2,7 @@ import './lease-vision-patch.mjs';
 import './autopay-patch.mjs';
 import './resident-concierge-patch.mjs';
 import './ai-server.mjs';
+import {installMaintenanceStorageFetch} from './maintenance-photo-loader.mjs';
 import {startComplianceMonitor} from './compliance-monitor.mjs';
 import {startNovaSupervisor} from './nova-supervisor.mjs';
 import {startJurisdictionResolver} from './jurisdiction-resolver.mjs';
@@ -11,6 +12,7 @@ import {startComplianceRuleMatcher} from './compliance-rule-matcher.mjs';
 import {startComplianceLifecycle} from './compliance-lifecycle.mjs';
 import {startAgentSwarm} from './agent-swarm.mjs';
 
+installMaintenanceStorageFetch();
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
