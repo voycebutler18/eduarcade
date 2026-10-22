@@ -5,6 +5,8 @@ import './ai-server.mjs';
 import {startComplianceMonitor} from './compliance-monitor.mjs';
 import {startNovaSupervisor} from './nova-supervisor.mjs';
 import {startJurisdictionResolver} from './jurisdiction-resolver.mjs';
+import {startLegalIngestor} from './legal-ingestor.mjs';
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
+startLegalIngestor();
