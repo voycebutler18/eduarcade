@@ -251,7 +251,8 @@ async function execute(task){
   switch(task.agent_key){
     case 'balance_auditor':case 'reminder_dispatcher':case 'promise_followup':return await runRentFollowups();
     case 'ledger_reconciliation':return await ledgerReconciliation(task);
-    case 'repair_tracker':return await repairTracker(task);\n    case 'feedback_collector':return await feedbackCollector(task);
+    case 'repair_tracker':return await repairTracker(task);
+    case 'feedback_collector':return await feedbackCollector(task);
     case 'priority_filter':return await priorityFilter(task);
     case 'vendor_dispatch':return await vendorDispatch(task);
     case 'damage_triage':return await damageTriage(task);
