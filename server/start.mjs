@@ -9,6 +9,8 @@ import {startLegalIngestor} from './legal-ingestor.mjs';
 import {startLegalReviewer} from './legal-reviewer.mjs';
 import {startComplianceRuleMatcher} from './compliance-rule-matcher.mjs';
 import {startComplianceLifecycle} from './compliance-lifecycle.mjs';
+import {startAgentSwarm} from './agent-swarm.mjs';
+
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
@@ -16,3 +18,4 @@ startLegalIngestor();
 startLegalReviewer();
 startComplianceRuleMatcher();
 startComplianceLifecycle();
+startAgentSwarm();
