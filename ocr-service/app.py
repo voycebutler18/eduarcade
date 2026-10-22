@@ -1,19 +1,35 @@
 import io, os, tempfile
+from functools import lru_cache
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import fitz
-from paddleocr import PaddleOCR
 
 app=FastAPI(title='RentPilot Open Document Vision')
 app.add_middleware(CORSMiddleware,allow_origins=['https://rentpilot-ai.onrender.com'],allow_credentials=False,allow_methods=['POST','GET'],allow_headers=['*'])
-ocr=PaddleOCR(use_doc_orientation_classify=True,use_doc_unwarping=True,use_textline_orientation=True)
+
+@lru_cache(maxsize=1)
+def get_ocr():
+    from paddleocr import PaddleOCR
+    # Keep the 512 MB Render service alive: disable document-orientation,
+    # unwarping and text-line orientation auxiliary models. OCR still reads
+    # photos/scans, while PDFs with embedded text bypass OCR entirely.
+    return PaddleOCR(
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        text_detection_model_name='PP-OCRv5_mobile_det',
+        text_recognition_model_name='PP-OCRv5_mobile_rec',
+    )
 
 def image_text(img: Image.Image):
-    with tempfile.NamedTemporaryFile(suffix='.png',delete=False) as f:
-        img.convert('RGB').save(f.name); path=f.name
+    # Bound giant phone photos before inference to reduce peak RAM.
+    img=img.convert('RGB')
+    img.thumbnail((2400,2400),Image.Resampling.LANCZOS)
+    with tempfile.NamedTemporaryFile(suffix='.jpg',delete=False) as f:
+        img.save(f.name,format='JPEG',quality=92,optimize=True); path=f.name
     try:
-        result=ocr.predict(path); parts=[]
+        result=get_ocr().predict(path); parts=[]
         for page in result:
             data=getattr(page,'json',None)
             if callable(data): data=data()
@@ -28,15 +44,18 @@ def image_text(img: Image.Image):
 
 def pdf_text(raw: bytes):
     doc=fitz.open(stream=raw,filetype='pdf'); pages=[]
-    for p in doc:
-        direct=p.get_text('text').strip()
-        if len(direct)>80: pages.append(direct); continue
-        pix=p.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
-        pages.append(image_text(Image.open(io.BytesIO(pix.tobytes('png')))))
+    try:
+        for p in doc:
+            direct=p.get_text('text').strip()
+            if len(direct)>80: pages.append(direct); continue
+            # 1.5x is enough for OCR and materially lowers memory versus 2x.
+            pix=p.get_pixmap(matrix=fitz.Matrix(1.5,1.5),alpha=False)
+            pages.append(image_text(Image.open(io.BytesIO(pix.tobytes('jpeg')))))
+    finally: doc.close()
     return '\n\n'.join(pages)
 
 @app.get('/health')
-def health(): return {'ok':True,'engine':'PaddleOCR','open_source':True}
+def health(): return {'ok':True,'engine':'PaddleOCR','open_source':True,'model_loading':'lazy'}
 
 @app.post('/ocr')
 async def read_document(file: UploadFile=File(...)):
