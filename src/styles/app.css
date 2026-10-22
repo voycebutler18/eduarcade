@@ -1,139 +1,24 @@
-/* Global styles for EduVerse Arena */
-
 :root{
-  --bg:#0b1220;
-  --card:#0f172a;
-  --muted:#9fb0c7;
-  --line:rgba(255,255,255,.06);
-  --text:#e6edf7;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color:#172019;background:#f4f7f4;font-synthesis:none;
+  --green:#173f2a;--lime:#dfff86;--line:#dfe7df;--muted:#68756d;--danger:#b23a31;
 }
-
-/* prevent rubber-band / pull-to-refresh while dragging the stick */
-html, body { overscroll-behavior: contain; }
-
-*{ box-sizing:border-box; }
-
-html, body, #root{ height:100%; }
-body{
-  margin:0;
-  background:var(--bg);
-  color:var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.app{
-  display:flex;
-  flex-direction:column;
-  min-height:100%;
-}
-
-/* Top bar */
-.topbar{
-  position:sticky; top:0; z-index:10;
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:10px 14px;
-  background:rgba(255,255,255,.03);
-  border-bottom:1px solid var(--line);
-}
-.brand{ font-weight:900; letter-spacing:.3px; }
-
-/* Tabs */
-.tabs{ display:flex; gap:8px; }
-.tab{
-  background:transparent; border:1px solid var(--line);
-  color:var(--text); border-radius:10px; padding:8px 12px; cursor:pointer;
-}
-.tab.active{
-  border-color:rgba(96,165,250,.45);
-  box-shadow:0 0 0 2px rgba(96,165,250,.15) inset;
-}
-
-/* Stage layout: Canvas + side panel */
-.stage{
-  display:grid; grid-template-columns: 1fr 380px; gap:12px;
-  padding:12px 14px;
-}
-.stage canvas{
-  width:100% !important; height:520px !important;
-  border-radius:12px; border:1px solid var(--line);
-  background:var(--card);
-
-  /* input/UX improvements for keyboard play */
-  user-select: none;
-  -webkit-user-select: none;
-  /* note: if mobile zoom/scroll still fights you, you can remove this next line */
-  touch-action: none;
-  outline: none;
-}
-.stage canvas:focus{
-  outline:2px solid rgba(96,165,250,.55);
-  box-shadow:0 0 0 4px rgba(96,165,250,.18) inset;
-}
-
-/* Right panel */
-.panel{
-  display:flex; flex-direction:column; gap:12px;
-  background:rgba(255,255,255,.03);
-  border:1px solid var(--line);
-  border-radius:12px; padding:10px;
-  max-height:520px; overflow:auto;
-}
-
-/* Footer */
-.footer{
-  padding:8px 14px; border-top:1px solid var(--line);
-  color:var(--muted);
-}
-
-/* Common UI helpers */
-.list{ margin:0 0 8px; padding-left:18px; }
-.primary{
-  background:linear-gradient(90deg, #60a5fa, #22d3ee); color:#09121e; font-weight:700;
-  border:none; padding:10px 14px; border-radius:10px; cursor:pointer;
-  box-shadow:0 6px 18px rgba(34,211,238,.25);
-}
-.muted{ color:var(--muted); }
-.small{ font-size:12px; }
-
-/* Responsive */
-@media (max-width: 980px){
-  .stage{ grid-template-columns: 1fr; }
-  .panel{ max-height:none; }
-  .stage canvas{ height:420px !important; }
-}
-
-/* ===== On-screen Thumbstick ===== */
-
-.thumbstick-wrap{
-  position: relative;           /* positioned inside the fixed container you render in App */
-  touch-action: none;           /* critical: prevent page scroll on drag */
-  user-select: none;
-  display: grid;
-  place-items: center;
-  pointer-events: auto;
-
-  /* visual default (component also sets exact width/height inline) */
-  background: radial-gradient(ellipse at 50% 60%, #5e646a 40%, #494f54 65%);
-  box-shadow: inset 0 8px 18px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.35);
-
-  /* CSS vars used by knob when using the CSS-var version */
-  --dx: 0px;
-  --dy: 0px;
-}
-
-.thumbstick-knob{
-  position: absolute;
-  left: 50%;
-  top: 50%;
-
-  /* These keep it centered by default; movement is relative to center */
-  transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy)));
-  will-change: transform;
-
-  /* visual default (component also sets exact size inline) */
-  background: #f2f2f2;
-  box-shadow: 0 6px 16px rgba(0,0,0,.35);
-  border-radius: 9999px;
-}
+*{box-sizing:border-box} html,body,#root{margin:0;min-height:100%;background:#f4f7f4} button{font:inherit}
+.shell{min-height:100vh;display:grid;grid-template-columns:245px 1fr}
+.sidebar{background:#10261a;color:white;padding:24px 16px;display:flex;flex-direction:column;gap:28px;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:11px;padding:0 8px}.logo-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--lime);color:#10261a;font-weight:900}.logo strong{display:block}.logo span{display:block;font-size:11px;color:#91a598;margin-top:3px}
+.sidebar nav{display:grid;gap:6px}.nav-item{width:100%;text-align:left;border:0;background:transparent;color:#b6c5ba;padding:11px 12px;border-radius:10px;cursor:pointer}.nav-item:hover,.nav-item.active{background:#1c3827;color:white}.nav-item.active{font-weight:700}
+.sidebar-bottom{margin-top:auto;display:grid;gap:12px}.ai-chip{display:flex;gap:10px;align-items:center;padding:12px;border:1px solid #2a4935;border-radius:13px;background:#163221}.ai-chip b,.ai-chip small{display:block}.ai-chip small{font-size:11px;color:#97aa9d;margin-top:2px}.pulse{width:9px;height:9px;border-radius:50%;background:#9ee35b;box-shadow:0 0 0 5px #9ee35b22}
+.main{padding:28px 34px 48px;max-width:1600px;width:100%;margin:auto}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.topbar h1{margin:1px 0 0;font-size:27px}.eyebrow{margin:0;text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:800;color:#738178}.top-actions{display:flex;align-items:center;gap:10px}.avatar{width:39px;height:39px;border-radius:50%;background:#173f2a;color:white;display:grid;place-items:center;font-size:12px;font-weight:800}
+.primary-btn,.ghost-btn{border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:750}.primary-btn{border:1px solid #173f2a;background:#173f2a;color:white}.ghost-btn{border:1px solid var(--line);background:white;color:#253029}
+.hero{border-radius:22px;background:#173f2a;color:white;padding:27px 30px;display:flex;align-items:center;justify-content:space-between;gap:20px;background-image:radial-gradient(circle at 85% 30%,#386447 0,transparent 38%)}.hero h2{font-size:30px;margin:6px 0 8px;max-width:620px}.hero>div>p:last-child{color:#bed0c2;margin:0;max-width:650px}.hero .eyebrow{color:#a7c2ad}.health{min-width:165px;background:#ffffff12;border:1px solid #ffffff20;padding:18px;border-radius:16px}.health span,.health small{display:block;color:#bdd0c2}.health strong{font-size:34px;display:block;margin:3px 0}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:16px 0}.stat-grid article,.panel-card{background:white;border:1px solid var(--line);border-radius:16px}.stat-grid article{padding:19px}.stat-grid span,.stat-grid small{display:block;color:var(--muted)}.stat-grid strong{display:block;font-size:27px;margin:8px 0 5px}.stat-grid small{font-size:12px}.good{color:#2e7d49!important}.bad{color:var(--danger)!important}
+.dashboard-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-bottom:16px}.panel-card{padding:20px}.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.section-head h2{margin:4px 0 0;font-size:19px}.count{background:#f1f4f1;border-radius:999px;padding:6px 9px;font-weight:800;font-size:12px}.live{font-size:10px;font-weight:900;background:#e6f8dd;color:#3a743f;border-radius:999px;padding:6px 9px}
+.attention{display:grid}.attention button{border:0;border-top:1px solid #edf1ed;background:transparent;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-align:left;padding:14px 2px;cursor:pointer}.attention button:first-child{border-top:0}.attention b,.attention small{display:block}.attention small{color:var(--muted);margin-top:3px}.dot{width:9px;height:9px;border-radius:50%}.red{background:#d9574f}.amber{background:#e2a93b}
+.activity{display:grid}.activity>div{display:grid;grid-template-columns:48px 1fr;gap:12px;padding:13px 0;border-top:1px solid #edf1ed}.activity>div:first-child{border-top:0}.activity>div>span{width:40px;height:40px;border-radius:12px;background:#eff7ef;display:grid;place-items:center;font-weight:900;color:#285b36}.activity p{margin:1px 0}.activity b,.activity small{display:block}.activity small{color:var(--muted);margin-top:3px}
+.mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:17px}.metric{background:#f6f8f6;border:1px solid #e7ece7;padding:15px;border-radius:13px}.metric span,.metric small{display:block;color:var(--muted)}.metric strong{display:block;font-size:23px;margin:5px 0}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-top:1px solid #edf1ed;font-size:13px}th{color:#7a867e;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pill{padding:5px 8px;border-radius:999px;font-size:11px;font-weight:700}.pill.warn{background:#fff3d8;color:#805a08}
+.cards-list{display:grid;gap:10px}.ticket{border:1px solid var(--line);border-radius:13px;padding:15px;display:flex;justify-content:space-between;gap:20px}.ticket h3{margin:7px 0 3px}.ticket p{margin:0;color:var(--muted)}.ticket-side{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:13px}.priority{font-size:10px;font-weight:900;text-transform:uppercase;background:#eef2ee;border-radius:999px;padding:5px 7px}.priority.high{background:#fff3d8;color:#805a08}.priority.emergency{background:#fde7e4;color:#9a332d}
+.empty-state{text-align:center;padding:70px 24px}.empty-state h2{font-size:31px;margin:7px}.empty-state>p:not(.eyebrow){max-width:560px;margin:0 auto 20px;color:var(--muted);line-height:1.6}
+@media(max-width:980px){.shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.sidebar nav{grid-template-columns:repeat(4,1fr)}.sidebar-bottom{display:none}.main{padding:20px}.stat-grid{grid-template-columns:repeat(2,1fr)}.dashboard-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.sidebar nav{grid-template-columns:repeat(2,1fr)}.topbar{align-items:flex-start;gap:14px}.top-actions .ghost-btn{display:none}.hero{align-items:flex-start;flex-direction:column}.health{width:100%}.stat-grid,.mini-grid{grid-template-columns:1fr}.ticket{flex-direction:column}.ticket-side{justify-content:space-between}}
