@@ -5,7 +5,7 @@ import {runComplianceMonitor} from './compliance-monitor.mjs';
 const URL=process.env.SUPABASE_URL;
 const KEY=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const admin=URL&&KEY?createClient(URL,KEY,{auth:{persistSession:false}}):null;
-const WORKER_ID=process.env.RENDER_INSTANCE_ID||process.env.HOSTNAME||`rentpilot-backend-${process.pid}`;
+const WORKER_ID=process.env.RENDER_INSTANCE_ID||process.env.HOSTNAME||`rentpilot-backend-${process.pid}`;\nconst GROQ_URL='https://api.groq.com/openai/v1/chat/completions';\nconst VISION_MODEL=process.env.GROQ_VISION_MODEL||'qwen/qwen3.8-27b';
 
 function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
 function openStatus(v){return !['completed','closed','cancelled','resolved'].includes(String(v||'').toLowerCase())}
@@ -64,23 +64,99 @@ async function priorityFilter(task){
 async function vendorDispatch(task){
   const req=await getMaintenance(task.entity_id);if(!req)return {state:'maintenance_missing'};
   if(req.vendor_id)return {state:'already_assigned',vendor_id:req.vendor_id};
-  const desired=tradeFor(req);
+  const {data:vision}=await admin.from('maintenance_agent_assessments').select('recommended_trade,confidence,findings').eq('maintenance_request_id',req.id).eq('agent_key','damage_triage').eq('assessment_type','vision_triage').order('created_at',{ascending:false}).limit(1).maybeSingle();
+  const visionTrade=vision&&num(vision.confidence)>=0.65?norm(vision.recommended_trade):'';
+  const desired=visionTrade||tradeFor(req);
   const {data:vendors,error}=await admin.from('vendors').select('id,name,trade,approved').eq('owner_id',task.owner_id).eq('approved',true);if(error)throw error;
   const ranked=(vendors||[]).map(v=>{const t=norm(v.trade);let score=0;if(t===desired)score=100;else if(t.includes(desired)||desired.includes(t))score=80;else if(desired==='general maintenance'&&/handyman|general|maintenance/.test(t))score=70;return {...v,score}}).filter(v=>v.score>0).sort((a,b)=>b.score-a.score);
   const top=ranked.slice(0,5);
-  await addAssessment(task,{assessment_type:'vendor_match',severity:norm(req.priority)||'normal',category:req.category||req.issue_type,confidence:top.length?Math.min(1,top[0].score/100):0,recommended_trade:desired,requires_human_review:true,findings:{candidates:top.map(v=>({vendor_id:v.id,name:v.name,trade:v.trade,score:v.score})),auto_assigned:false}});
-  await addAction(task,'nova_vendor_approval_required',top.length?`NOVA matched ${top.length} approved vendor option${top.length===1?'':'s'} for this maintenance request. Approve before dispatch.`:`No approved ${desired} vendor is currently available. Review vendor options before dispatch.`,{property_id:req.property_id,unit_id:req.unit_id,recommended_trade:desired,candidate_vendor_ids:top.map(v=>v.id),human_approval_required:true,auto_dispatch:false,deterministic:true});
-  return {state:top.length?'vendor_candidates_ready':'no_matching_vendor',recommended_trade:desired,candidate_count:top.length,auto_dispatched:false};
+  await addAssessment(task,{assessment_type:'vendor_match',severity:norm(req.priority)||'normal',category:req.category||req.issue_type,confidence:top.length?Math.min(1,top[0].score/100):0,recommended_trade:desired,requires_human_review:true,findings:{candidates:top.map(v=>({vendor_id:v.id,name:v.name,trade:v.trade,score:v.score})),auto_assigned:false,trade_source:visionTrade?'vision_assessment':'request_text'}});
+  await addAction(task,'nova_vendor_approval_required',top.length?`NOVA matched ${top.length} approved vendor option${top.length===1?'':'s'} for this maintenance request. Approve before dispatch.`:`No approved ${desired} vendor is currently available. Review vendor options before dispatch.`,{property_id:req.property_id,unit_id:req.unit_id,recommended_trade:desired,candidate_vendor_ids:top.map(v=>v.id),human_approval_required:true,auto_dispatch:false,deterministic:true,trade_source:visionTrade?'vision_assessment':'request_text'});
+  return {state:top.length?'vendor_candidates_ready':'no_matching_vendor',recommended_trade:desired,candidate_count:top.length,auto_dispatched:false,trade_source:visionTrade?'vision_assessment':'request_text'};
+}
+async function imageDataUrl(url){
+  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),15000);
+  try{
+    const r=await fetch(url,{signal:ctrl.signal,redirect:'follow'});
+    if(!r.ok)throw new Error('image fetch HTTP '+r.status);
+    const type=(r.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+    if(!type.startsWith('image/'))throw new Error('maintenance photo is not an image');
+    const ab=await r.arrayBuffer();
+    if(ab.byteLength>8*1024*1024)throw new Error('maintenance photo exceeds 8MB worker limit');
+    return `data:${type};base64,${Buffer.from(ab).toString('base64')}`;
+  } finally {clearTimeout(timer)}
+}
+function cleanVisionJson(raw){
+  const s=String(raw||'').replace(/^\`\`\`json\\s*/i,'').replace(/\`\`\`$/,'').trim();
+  return JSON.parse(s);
 }
 async function damageTriage(task){
   const req=await getMaintenance(task.entity_id);if(!req)return {state:'maintenance_missing'};
-  const photos=Array.isArray(req.photo_urls)?req.photo_urls:[];
-  const safety=[];const text=norm(`${req.title||''} ${req.description||''} ${req.issue_type||''}`);
-  if(/smoke|fire|sparking|gas smell|carbon monoxide|electrical burning/.test(text))safety.push('possible_immediate_safety_hazard');
-  if(/flood|burst pipe|major leak|ceiling collapse/.test(text))safety.push('possible_property_damage_escalation');
-  await addAssessment(task,{assessment_type:'vision_triage_pending',severity:urgent(req)?'high':'unknown',category:req.category||req.issue_type,confidence:0,recommended_trade:tradeFor(req),safety_flags:safety,requires_human_review:true,findings:{photo_count:photos.length,vision_classification_completed:false,reason:'No trusted image-vision executor is connected to the maintenance swarm yet. Text safety flags only; photos were not interpreted.'}});
-  if(safety.length)await addAction(task,'nova_maintenance_safety_review',`Maintenance request contains language that may indicate a safety hazard. Human review is required; NOVA did not infer the photos.`,{property_id:req.property_id,unit_id:req.unit_id,safety_flags:safety,human_approval_required:true,vision_completed:false});
-  return {state:'vision_pending',photo_count:photos.length,text_safety_flags:safety,recommended_trade:tradeFor(req),safe_noop:true};
+  const photos=(Array.isArray(req.photo_urls)?req.photo_urls:[]).filter(Boolean).slice(0,3);
+  const textSafety=[];const text=norm(`${req.title||''} ${req.description||''} ${req.issue_type||''}`);
+  if(/smoke|fire|sparking|gas smell|carbon monoxide|electrical burning/.test(text))textSafety.push('possible_immediate_safety_hazard');
+  if(/flood|burst pipe|major leak|ceiling collapse/.test(text))textSafety.push('possible_property_damage_escalation');
+  if(!photos.length){
+    await addAssessment(task,{assessment_type:'vision_triage',severity:urgent(req)?'high':'unknown',category:req.category||req.issue_type,confidence:0,recommended_trade:tradeFor(req),safety_flags:textSafety,requires_human_review:Boolean(textSafety.length||urgent(req)),findings:{photo_count:0,vision_classification_completed:false,reason:'No maintenance photos were attached. Text-only routing was used.'}});
+    if(textSafety.length)await addAction(task,'nova_maintenance_safety_review','Maintenance request text may indicate a safety hazard. Human review is required.',{property_id:req.property_id,unit_id:req.unit_id,safety_flags:textSafety,human_approval_required:true,vision_completed:false});
+    return {state:'no_photos',photo_count:0,text_safety_flags:textSafety,recommended_trade:tradeFor(req)};
+  }
+  if(!process.env.GROQ_API_KEY)throw new Error('GROQ_API_KEY is required for maintenance vision triage');
+
+  const imageParts=[];
+  const imageErrors=[];
+  for(const url of photos){
+    try{imageParts.push({type:'image_url',image_url:{url:await imageDataUrl(url)}})}
+    catch(e){imageErrors.push(String(e?.message||e))}
+  }
+  if(!imageParts.length)throw new Error('No maintenance photos could be loaded: '+imageErrors.join('; '));
+
+  const prompt=`Analyze these tenant-submitted maintenance photos conservatively. Use only what is visible in the images plus the request text below. Do not claim a gas leak, electrical safety condition, structural failure, code violation, mold species, habitability violation, or legal conclusion from an image. You may flag a POSSIBLE hazard that needs human review. Return ONLY JSON with this schema:
+{"severity":"low"|"medium"|"high"|"emergency","category":string,"recommended_trade":string,"confidence":number,"observations":string[],"possible_hazards":string[],"human_review_reason":string|null}
+Severity means operational urgency, not a legal determination. emergency/high must still be human-reviewed.
+Request title: ${req.title||''}
+Description: ${req.description||''}
+Category: ${req.category||''}
+Issue type: ${req.issue_type||''}`;
+
+  const response=await fetch(GROQ_URL,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${process.env.GROQ_API_KEY}`},body:JSON.stringify({
+    model:VISION_MODEL,
+    messages:[{role:'user',content:[{type:'text',text:prompt},...imageParts]}],
+    temperature:0,
+    response_format:{type:'json_object'},
+    max_completion_tokens:900
+  })});
+  if(!response.ok)throw new Error('maintenance vision HTTP '+response.status);
+  const body=await response.json();
+  const vision=cleanVisionJson(body.choices?.[0]?.message?.content||'{}');
+  const allowedSeverity=new Set(['low','medium','high','emergency']);
+  const severity=allowedSeverity.has(norm(vision.severity))?norm(vision.severity):(urgent(req)?'high':'medium');
+  const confidence=Math.max(0,Math.min(1,num(vision.confidence)));
+  const hazards=[...new Set([...textSafety,...(Array.isArray(vision.possible_hazards)?vision.possible_hazards.map(x=>String(x).slice(0,240)):[])])];
+  const recommendedTrade=String(vision.recommended_trade||tradeFor(req)).slice(0,120);
+  const needsHuman=severity==='high'||severity==='emergency'||hazards.length>0||Boolean(vision.human_review_reason);
+
+  await addAssessment(task,{
+    assessment_type:'vision_triage',
+    severity,
+    category:String(vision.category||req.category||req.issue_type||'maintenance').slice(0,120),
+    confidence,
+    recommended_trade:recommendedTrade,
+    safety_flags:hazards,
+    requires_human_review:needsHuman,
+    findings:{
+      photo_count:photos.length,
+      analyzed_photo_count:imageParts.length,
+      image_errors:imageErrors,
+      vision_classification_completed:true,
+      model:VISION_MODEL,
+      observations:Array.isArray(vision.observations)?vision.observations.slice(0,12).map(x=>String(x).slice(0,500)):[],
+      human_review_reason:vision.human_review_reason?String(vision.human_review_reason).slice(0,500):null,
+      guardrail:'Vision findings are advisory. No legal, code, habitability, or definitive safety determination is made from photos.'
+    }
+  });
+  if(needsHuman)await addAction(task,'nova_maintenance_safety_review',`Photo triage marked this maintenance request ${severity}. Review the images and findings before safety-sensitive action.`,{property_id:req.property_id,unit_id:req.unit_id,safety_flags:hazards,severity,confidence,human_approval_required:true,vision_completed:true,model:VISION_MODEL});
+  return {state:'vision_complete',severity,confidence,recommended_trade:recommendedTrade,possible_hazards:hazards,requires_human_review:needsHuman,model:VISION_MODEL};
 }
 async function tenantWelcomer(task){
   const {data:lease,error}=await admin.from('leases').select('id,tenant_id,unit_id,status,start_date').eq('id',task.entity_id).maybeSingle();if(error)throw error;if(!lease)return {state:'lease_missing'};
