@@ -69,14 +69,14 @@ async function monitorSources(){
   const {data:sources,error}=await admin.from('compliance_source_registry').select('*').eq('active',true).or('next_check_at.is.null,next_check_at.lte.'+now);
   if(error)throw error;
   for(const s of sources||[]){
-    const before=s.last_fingerprint||null; const run=(await admin.from('compliance_monitor_runs').insert({source_id:s.id,status:'running',fingerprint_before:before}).select('id').single()).data;
+    const before=s.last_fingerprint||null; const run=(await admin.from('compliance_monitor_runs').insert({source_id:s.id,status:'started',fingerprint_before:before}).select('id').single()).data;
     try{
       const f=await fingerprintUrl(s.machine_endpoint||s.base_url);
       const changed=Boolean(before&&before!==f.fingerprint);
       await admin.from('compliance_source_snapshots').insert({source_registry_id:s.id,fingerprint:f.fingerprint,http_status:f.status,etag:f.etag,last_modified:f.lastModified,content_length:f.contentLength,changed});
       const next=new Date(Date.now()+Math.max(1,Number(s.check_interval_hours||24))*3600000).toISOString();
       await admin.from('compliance_source_registry').update({last_checked_at:now,last_fingerprint:f.fingerprint,last_http_status:f.status,last_error:null,consecutive_failures:0,next_check_at:next}).eq('id',s.id);
-      await admin.from('compliance_monitor_runs').update({finished_at:new Date().toISOString(),status:f.ok?'completed':'http_error',fingerprint_after:f.fingerprint,change_detected:changed,error_message:f.ok?null:'HTTP '+f.status}).eq('id',run.id);
+      await admin.from('compliance_monitor_runs').update({finished_at:new Date().toISOString(),status:f.ok?'succeeded':'failed',fingerprint_after:f.fingerprint,change_detected:changed,error_message:f.ok?null:'HTTP '+f.status}).eq('id',run.id);
       if(changed){
         const {data:props}=await admin.from('properties').select('id,owner_id,name,country_code,admin_area_1,state,locality,city').eq('country_code',s.country_code);
         for(const p of props||[]){
