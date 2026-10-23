@@ -19,6 +19,8 @@ import "./styles/onboarding.css";
 import "./styles/legal.css";
 
 const legalPages:LegalPage[]=["privacy","terms","data","cookies","accessibility"];
+const viewTitles:Record<string,string>={overview:"Overview",properties:"Properties",tenants:"Residents & Leases",documents:"Document Vault",money:"Money Chaser",payments:"Payments & Payouts",maintenance:"Maintenance",compliance:"Compliance & Inspections",inbox:"Inbox",vendors:"Vendors",local:"Local Intelligence",ai:"AI Activity",admin:"Admin"};
+const legalTitles:Record<LegalPage,string>={privacy:"Privacy Policy",terms:"Terms of Service",data:"Data & Security",cookies:"Cookie Policy",accessibility:"Accessibility"};
 
 function Root(){
   const[ready,setReady]=useState(false),[signedIn,setSignedIn]=useState(false);
@@ -27,10 +29,21 @@ function Root(){
     const{data}=supabase.auth.onAuthStateChange((_event,session)=>setSignedIn(Boolean(session)));
     return()=>data.subscription.unsubscribe();
   },[]);
-  if(!ready)return <div className="loading-screen">Loading Mendlyx...</div>;
   const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
   const auth=params.get("auth");
   const portal=params.get("portal");
+  const view=params.get("view");
+  useEffect(()=>{
+    let page="AI Property Operations for Landlords & Property Managers";
+    if(legal&&legalPages.includes(legal))page=legalTitles[legal];
+    else if(auth==="signup")page="Create Account";
+    else if(auth==="login")page="Sign In";
+    else if(auth==="resident")page="Resident Sign In";
+    else if(auth==="maintenance")page="Maintenance Access";
+    else if(view&&viewTitles[view])page=viewTitles[view];
+    document.title=`${page} | Mendlyx`;
+  },[legal,auth,view]);
+  if(!ready)return <div className="loading-screen">Loading Mendlyx...</div>;
   const wantsWorkspace=params.has("view")||params.get("app")==="1"||portal==="resident"||portal==="maintenance";
   if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href="/"}/>;
   if(auth==="maintenance")return <div className="rp-public-frame"><MaintenanceAccess/><LegalFooter/></div>;
