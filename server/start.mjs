@@ -3,6 +3,7 @@ import './autopay-patch.mjs';
 import './resident-concierge-patch.mjs';
 import './paypal-route-patch.mjs';
 import './maintenance-ops-patch.mjs';
+import './maintenance-team-photo-patch.mjs';
 import './ai-server.mjs';
 import {installMaintenanceStorageFetch} from './maintenance-photo-loader.mjs';
 import {startMaintenanceAutoRouter} from './maintenance-auto-router.mjs';
