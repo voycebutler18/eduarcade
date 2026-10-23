@@ -2,6 +2,7 @@ import {useState} from "react";
 import type {Session} from "@supabase/supabase-js";
 import {MoneyChaser} from "./MoneyChaser";
 import {UniversalBusinessMoneyChaser} from "./UniversalBusinessMoneyChaser";
+import {MoneyChaserEmailQueue} from "./MoneyChaserEmailQueue";
 
 export function MoneyChaserHub({session}:{session:Session}){
  const[scope,setScope]=useState<"property"|"business">("property");
@@ -14,5 +15,6 @@ export function MoneyChaserHub({session}:{session:Session}){
    </div>
   </section>
   {scope==="property"?<MoneyChaser session={session}/>:<UniversalBusinessMoneyChaser session={session}/>} 
+  <MoneyChaserEmailQueue session={session} scope={scope}/>
  </>;
 }
