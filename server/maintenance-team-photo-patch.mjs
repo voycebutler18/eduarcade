@@ -1,0 +1,9 @@
+import express from 'express';
+import {createClient} from '@supabase/supabase-js';
+const originalListen=express.application.listen;let installed=false;
+const SUPABASE_URL=process.env.SUPABASE_URL||'https://pxikovdxfgsvqvvpwnky.supabase.co';
+const KEY=process.env.SUPABASE_PUBLISHABLE_KEY||'sb_publishable_HKpnoybJTD0ILSYMUYNXWA_Jy25MuzT';
+const admin=process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
+async function authUser(req,res,next){const token=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');if(!token)return res.status(401).json({error:'Authentication required'});const client=createClient(SUPABASE_URL,KEY,{auth:{persistSession:false}});const{data,error}=await client.auth.getUser(token);if(error||!data.user)return res.status(401).json({error:'Invalid session'});req.user=data.user;next()}
+function install(app){app.get('/api/maintenance/team/work-orders/:id/photos',authUser,async(req,res)=>{if(!admin)return res.status(503).json({error:'Maintenance photo service unavailable'});const{data:member}=await admin.from('maintenance_team_members').select('owner_id').eq('user_id',req.user.id).eq('active',true).maybeSingle();if(!member)return res.status(403).json({error:'Maintenance team account required'});const{data:work}=await admin.from('maintenance_requests').select('photo_urls').eq('id',req.params.id).eq('owner_id',member.owner_id).maybeSingle();if(!work)return res.status(404).json({error:'Work order not found'});const urls=[];for(const path of work.photo_urls||[]){const signed=await admin.storage.from('maintenance-photos').createSignedUrl(path,900);if(signed.data?.signedUrl)urls.push(signed.data.signedUrl)}return res.json({urls})});console.log('RentPilot maintenance team photo access installed')}
+express.application.listen=function(...args){if(!installed){installed=true;install(this)}return originalListen.apply(this,args)};
