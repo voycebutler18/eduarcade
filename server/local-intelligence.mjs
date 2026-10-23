@@ -1,3 +1,4 @@
+import {createClient} from "@supabase/supabase-js";
 import crypto from "node:crypto";
 const UA="RentPilotAI/1.0 local-intelligence";
 const hash=v=>crypto.createHash("sha256").update(v).digest("hex");
@@ -9,3 +10,13 @@ async function earthquakes(p,point){const start=new Date(Date.now()-48*3600e3).t
 async function water(p,point){try{const d=await json(`https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?f=json&bbox=${point.lon-.18},${point.lat-.18},${point.lon+.18},${point.lat+.18}&limit=10`);const n=(d.features||[]).length;if(!n)return[];return[{category:"water_monitoring",severity:"info",title:"Water monitoring coverage near property",summary:`USGS has ${n} water monitoring location${n===1?"":"s"} in the surrounding area.`,impact:"This is monitoring coverage, not a water-service outage or boil-water notice.",recommended_action:"NOVA will use verified utility or emergency notices for service-impact alerts; this source adds hydrologic context.",source_name:"U.S. Geological Survey Water Data",source_url:"https://api.waterdata.usgs.gov/",source_published_at:null,verified:true,fingerprint:hash(`usgs-water-coverage:${p.id}:${n}`),metadata:{monitoring_locations:n}}]}catch{return[]}}
 async function insertBrief(supabase,p,b){const row={owner_id:p.owner_id,property_id:p.id,...b};const{error}=await supabase.from("local_intelligence_briefs").upsert(row,{onConflict:"property_id,fingerprint",ignoreDuplicates:true});if(error)throw error}
 export async function runLocalIntelligenceSweep(supabase){const{data:properties,error}=await supabase.from("properties").select("id,owner_id,name,address_line1,city,state,postal_code");if(error)throw error;let scanned=0,created=0,failures=0;for(const p of properties||[]){try{const point=await geocode(p);if(!point)continue;const groups=await Promise.allSettled([weather(p,point),earthquakes(p,point),water(p,point)]);for(const g of groups){if(g.status!=="fulfilled"){failures++;continue}for(const b of g.value){await insertBrief(supabase,p,b);created++}}scanned++}catch(e){failures++;console.error("local intelligence property failed",p.id,e?.message||e)}}return{scanned,processed:created,failures}}
+
+
+export function startLocalIntelligence(){
+ const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+ if(!url||!key){console.warn("Local intelligence disabled: Supabase service role missing");return}
+ const admin=createClient(url,key,{auth:{persistSession:false}});
+ const run=()=>runLocalIntelligenceSweep(admin).then(r=>console.log("local-intelligence",r)).catch(e=>console.error("local-intelligence",e?.message||e));
+ setTimeout(run,45000);
+ setInterval(run,30*60*1000);
+}
