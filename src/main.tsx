@@ -26,12 +26,14 @@ function Root(){
   },[]);
   if(!ready)return <div className="loading-screen">Loading RentPilot...</div>;
   const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
-  const showLanding=params.get("landing")==="1";
-  if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href=signedIn?"/?view=overview":"/"}/>;
-  if(showLanding)return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href=signedIn?"/?view=overview":"/?auth=login"}/>;
-  if(signedIn)return <SubscriptionGate><div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
   const auth=params.get("auth");
+  const wantsWorkspace=params.has("view")||params.get("app")==="1";
+  if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href="/"}/>;
   if(auth==="signup"||auth==="login")return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;
+  if(wantsWorkspace){
+    if(!signedIn)return <div className="rp-public-frame"><PublicAuth initial="login"/><LegalFooter/></div>;
+    return <SubscriptionGate><div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
+  }
   return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"}/>;
 }
 
