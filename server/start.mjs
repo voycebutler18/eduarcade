@@ -5,6 +5,7 @@ import './paypal-route-patch.mjs';
 import './maintenance-ops-patch.mjs';
 import './ai-server.mjs';
 import {installMaintenanceStorageFetch} from './maintenance-photo-loader.mjs';
+import {startMaintenanceAutoRouter} from './maintenance-auto-router.mjs';
 import {startComplianceMonitor} from './compliance-monitor.mjs';
 import {startNovaSupervisor} from './nova-supervisor.mjs';
 import {startJurisdictionResolver} from './jurisdiction-resolver.mjs';
@@ -16,6 +17,7 @@ import {startAgentSwarm} from './agent-swarm.mjs';
 import {startLocalIntelligence} from './local-intelligence.mjs';
 
 installMaintenanceStorageFetch();
+startMaintenanceAutoRouter();
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
