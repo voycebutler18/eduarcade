@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /?auth=
+Disallow: /?app=
+Disallow: /?view=
+Disallow: /?portal=
+
+Sitemap: https://mendlyx.com/sitemap.xml
