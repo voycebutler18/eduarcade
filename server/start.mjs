@@ -17,9 +17,11 @@ import {startComplianceRuleMatcher} from './compliance-rule-matcher.mjs';
 import {startComplianceLifecycle} from './compliance-lifecycle.mjs';
 import {startAgentSwarm} from './agent-swarm.mjs';
 import {startLocalIntelligence} from './local-intelligence.mjs';
+import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
+startMoneyChaserAutoEngine();
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
