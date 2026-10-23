@@ -1,3 +1,4 @@
+import './mendlyx-brand-patch.mjs';
 import './lease-vision-patch.mjs';
 import './autopay-patch.mjs';
 import './resident-concierge-patch.mjs';
