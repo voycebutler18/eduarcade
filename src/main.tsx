@@ -6,6 +6,7 @@ import {supabase} from "./lib/supabase";
 import {ResidentConciergeLauncher} from "./components/ResidentConciergeLauncher";
 import {PublicLanding} from "./components/PublicLanding";
 import {PublicAuth} from "./components/PublicAuth";
+import {SubscriptionGate} from "./components/SubscriptionGate";
 import {LegalFooter,LegalPageView,type LegalPage} from "./components/LegalPages";
 import "./styles/app.css";
 import "./styles/tenant-enterprise.css";
@@ -26,7 +27,7 @@ function Root(){
   if(!ready)return <div className="loading-screen">Loading RentPilot...</div>;
   const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
   if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href=signedIn?"/?view=overview":"/"}/>;
-  if(signedIn)return <div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div>;
+  if(signedIn)return <SubscriptionGate><div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
   const auth=params.get("auth");
   if(auth==="signup"||auth==="login")return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;
   return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"}/>;
