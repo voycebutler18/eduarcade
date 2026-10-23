@@ -17,7 +17,7 @@ async function browserSafeClientToken(){
   const id=process.env.PAYPAL_CLIENT_ID,secret=process.env.PAYPAL_CLIENT_SECRET;
   if(!id||!secret)throw new Error('PayPal is not configured');
   const body=new URLSearchParams();
-  body.set('grant_type','client_credentials');body.set('response_type','client_token');body.append('domains[]',FRONTEND);
+  body.set('grant_type','client_credentials');body.set('response_type','client_token');body.append('domains[]',new URL(FRONTEND).hostname);
   const r=await fetch(`${PAYPAL_BASE}/v1/oauth2/token`,{method:'POST',headers:{Authorization:`Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`,'Content-Type':'application/x-www-form-urlencoded'},body});
   const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{}
   if(!r.ok||!j.access_token)throw new Error(j.error_description||`Unable to initialize secure card fields (${r.status})`);
