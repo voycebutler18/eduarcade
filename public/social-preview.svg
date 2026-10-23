@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Mendlyx AI Property Operations">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1711"/><stop offset="1" stop-color="#173f2a"/></linearGradient>
+    <linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#42e6b1"/><stop offset="1" stop-color="#12a878"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1050" cy="80" r="260" fill="#42e6b1" opacity=".06"/>
+  <circle cx="1060" cy="590" r="360" fill="#12a878" opacity=".07"/>
+  <rect x="86" y="126" width="180" height="180" rx="38" fill="#08110d" stroke="#42e6b1" stroke-width="4"/>
+  <path d="M120 270V164h30l26 38 26-38h30v106h-30v-58l-26 36-26-36v58z" fill="url(#m)"/>
+  <text x="310" y="220" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="88" font-weight="700">Mendlyx</text>
+  <text x="92" y="382" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="46" font-weight="700">AI-powered property operations.</text>
+  <text x="92" y="438" fill="#b9d2c5" font-family="Arial,Helvetica,sans-serif" font-size="28">Rent operations · Maintenance · Residents · Vendors · NOVA AI</text>
+  <rect x="92" y="500" width="380" height="58" rx="29" fill="#42e6b1"/>
+  <text x="282" y="538" text-anchor="middle" fill="#092016" font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700">mendlyx.com</text>
+</svg>
