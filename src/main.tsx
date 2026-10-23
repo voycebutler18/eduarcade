@@ -27,14 +27,16 @@ function Root(){
   if(!ready)return <div className="loading-screen">Loading RentPilot...</div>;
   const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
   const auth=params.get("auth");
-  const wantsWorkspace=params.has("view")||params.get("app")==="1";
+  const portal=params.get("portal");
+  const wantsWorkspace=params.has("view")||params.get("app")==="1"||portal==="resident";
   if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href="/"}/>;
   if(auth==="signup"||auth==="login")return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;
+  if(auth==="resident")return <div className="rp-public-frame"><PublicAuth initial="login" residentLogin/><LegalFooter/></div>;
   if(wantsWorkspace){
-    if(!signedIn)return <div className="rp-public-frame"><PublicAuth initial="login"/><LegalFooter/></div>;
+    if(!signedIn)return <div className="rp-public-frame"><PublicAuth initial="login" residentLogin={portal==="resident"}/><LegalFooter/></div>;
     return <SubscriptionGate><div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
   }
-  return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"}/>;
+  return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"} onResidentSignIn={()=>location.href="/?auth=resident"}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<React.StrictMode><Root/></React.StrictMode>);
