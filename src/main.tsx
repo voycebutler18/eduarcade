@@ -6,6 +6,7 @@ import {supabase} from "./lib/supabase";
 import {ResidentConciergeLauncher} from "./components/ResidentConciergeLauncher";
 import {PublicLanding} from "./components/PublicLanding";
 import {PublicAuth} from "./components/PublicAuth";
+import {MaintenanceAccess} from "./components/MaintenanceAccess";
 import {SubscriptionGate} from "./components/SubscriptionGate";
 import {LegalFooter,LegalPageView,type LegalPage} from "./components/LegalPages";
 import "./styles/app.css";
@@ -28,8 +29,9 @@ function Root(){
   const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
   const auth=params.get("auth");
   const portal=params.get("portal");
-  const wantsWorkspace=params.has("view")||params.get("app")==="1"||portal==="resident";
+  const wantsWorkspace=params.has("view")||params.get("app")==="1"||portal==="resident"||portal==="maintenance";
   if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href="/"}/>;
+  if(auth==="maintenance")return <div className="rp-public-frame"><MaintenanceAccess/><LegalFooter/></div>;
   if(auth==="signup"||auth==="login")return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;
   if(auth==="resident")return <div className="rp-public-frame"><PublicAuth initial="login" residentLogin/><LegalFooter/></div>;
   if(wantsWorkspace){
