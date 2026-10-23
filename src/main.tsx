@@ -13,6 +13,23 @@ import "./styles/landlord-enterprise.css";
 import "./styles/public-landing.css";
 import "./styles/onboarding.css";
 import "./styles/legal.css";
+
 const legalPages:LegalPage[]=["privacy","terms","data","cookies","accessibility"];
-function Root(){const[ready,setReady]=useState(false),[signedIn,setSignedIn]=useState(false);useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSignedIn(Boolean(data.session));setReady(true)});const{data}=supabase.auth.onAuthStateChange((_e,s)=>setSignedIn(Boolean(s)));return()=>data.subscription.unsubscribe()},[]);if(!ready)return <div className="loading-screen">Loading RentPilot...</div>;const params=new URLSearchParams(location.search),legal=params.get('legal') as LegalPage|null;if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href=signedIn?'/?view=overview':'/'}/>;if(signedIn)return <div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div>;const auth=params.get('auth');if(auth==='signup'||auth==='login')return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;return <PublicLanding onStart={()=>location.href='/?auth=signup'} onSignIn={()=>location.href='/?auth=login'}/>}
+
+function Root(){
+  const[ready,setReady]=useState(false),[signedIn,setSignedIn]=useState(false);
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>{setSignedIn(Boolean(data.session));setReady(true)});
+    const{data}=supabase.auth.onAuthStateChange((_event,session)=>setSignedIn(Boolean(session)));
+    return()=>data.subscription.unsubscribe();
+  },[]);
+  if(!ready)return <div className="loading-screen">Loading RentPilot...</div>;
+  const params=new URLSearchParams(location.search),legal=params.get("legal") as LegalPage|null;
+  if(legal&&legalPages.includes(legal))return <LegalPageView page={legal} onBack={()=>location.href=signedIn?"/?view=overview":"/"}/>;
+  if(signedIn)return <div className="rp-app-frame"><App/><LegalFooter/><ResidentConciergeLauncher/></div>;
+  const auth=params.get("auth");
+  if(auth==="signup"||auth==="login")return <div className="rp-public-frame"><PublicAuth initial={auth}/><LegalFooter/></div>;
+  return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"}/>;
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<React.StrictMode><Root/></React.StrictMode>);
