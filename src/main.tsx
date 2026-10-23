@@ -6,6 +6,7 @@ import {ResidentConciergeLauncher} from "./components/ResidentConciergeLauncher"
 
 // Global styles
 import "./styles/app.css";
+import "./styles/tenant-enterprise.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
