@@ -9,6 +9,7 @@ import {PublicAuth} from "./components/PublicAuth";
 import {MaintenanceAccess} from "./components/MaintenanceAccess";
 import {MaintenanceAutomationSettings} from "./components/MaintenanceAutomationSettings";
 import {MaintenanceApprovalCenter} from "./components/MaintenanceApprovalCenter";
+import {NovaOwnerControlLauncher} from "./components/NovaOwnerControlLauncher";
 import {SubscriptionGate} from "./components/SubscriptionGate";
 import {LegalFooter,LegalPageView,type LegalPage} from "./components/LegalPages";
 import "./styles/app.css";
@@ -51,7 +52,7 @@ function Root(){
   if(auth==="resident")return <div className="rp-public-frame"><PublicAuth initial="login" residentLogin/><LegalFooter/></div>;
   if(wantsWorkspace){
     if(!signedIn)return <div className="rp-public-frame"><PublicAuth initial="login" residentLogin={portal==="resident"}/><LegalFooter/></div>;
-    return <SubscriptionGate><div className="rp-app-frame"><App/><MaintenanceAutomationSettings/><MaintenanceApprovalCenter/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
+    return <SubscriptionGate><div className="rp-app-frame"><App/><MaintenanceAutomationSettings/><MaintenanceApprovalCenter/><NovaOwnerControlLauncher/><LegalFooter/><ResidentConciergeLauncher/></div></SubscriptionGate>;
   }
   return <PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"} onResidentSignIn={()=>location.href="/?auth=resident"}/>;
 }
