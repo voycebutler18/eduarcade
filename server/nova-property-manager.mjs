@@ -3,10 +3,10 @@ import {createClient} from '@supabase/supabase-js';
 const SUPABASE_URL=process.env.SUPABASE_URL||'https://pxikovdxfgsvqvvpwnky.supabase.co';
 const admin=process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
 let timer=null,running=false;
-
 function sum(xs,key){return (xs||[]).reduce((s,x)=>s+Number(x?.[key]||0),0)}
+function clamp(n){return Math.max(0,Math.min(100,n))}function sevWeight(s){return s==='critical'?30:s==='high'?15:s==='medium'?7:s==='low'?2:0}
 async function refreshOwner(ownerId){
- const[{data:properties},{data:units},{data:leases},{data:tenants},{data:charges},{data:payments},{data:maintenance},{data:documents},{data:exceptions}]=await Promise.all([
+ const[{data:properties},{data:units},{data:leases},{data:tenants},{data:charges},{data:payments},{data:maintenance},{data:documents},{data:exceptions},{data:findings},{data:assets},{data:preventive},{data:compliance}]=await Promise.all([
   admin.from('properties').select('id,name,address_line1,city,state,postal_code').eq('owner_id',ownerId),
   admin.from('units').select('id,property_id,unit_label,status,monthly_rent').eq('owner_id',ownerId),
   admin.from('leases').select('id,owner_id,tenant_id,unit_id,monthly_rent,due_day,start_date,end_date,status').eq('owner_id',ownerId),
@@ -15,31 +15,22 @@ async function refreshOwner(ownerId){
   admin.from('payments').select('id,lease_id,rent_charge_id,amount,paid_at,method').eq('owner_id',ownerId),
   admin.from('maintenance_requests').select('id,property_id,unit_id,tenant_id,title,priority,status,created_at,scheduled_for,completed_at').eq('owner_id',ownerId).neq('status','cancelled'),
   admin.from('lease_documents').select('id,lease_id,name,document_type,visible_to_resident,created_at').eq('owner_id',ownerId),
-  admin.from('nova_exceptions').select('id,property_id,severity,status,created_at').eq('owner_id',ownerId).eq('status','open')
+  admin.from('nova_exceptions').select('id,property_id,severity,status,created_at').eq('owner_id',ownerId).eq('status','open'),
+  admin.from('inspection_findings').select('id,property_id,severity,resolved_at').eq('owner_id',ownerId).is('resolved_at',null),
+  admin.from('property_assets').select('id,property_id,status,next_service_at,warranty_expires_at').eq('owner_id',ownerId).eq('status','active'),
+  admin.from('preventive_maintenance_tasks').select('id,property_id,status,due_at').eq('owner_id',ownerId).in('status',['created','scheduled']),
+  admin.from('property_compliance_matches').select('id,property_id,next_action_date,missing_fields').eq('owner_id',ownerId)
  ]);
- const tenantMap=new Map((tenants||[]).map(t=>[t.id,t])),unitMap=new Map((units||[]).map(u=>[u.id,u]));
- const paidByCharge={};for(const p of payments||[])if(p.rent_charge_id)paidByCharge[p.rent_charge_id]=(paidByCharge[p.rent_charge_id]||0)+Number(p.amount||0);
- for(const lease of leases||[]){
-  await admin.from('lease_intelligence').upsert({owner_id:ownerId,lease_id:lease.id,rent_amount:Number(lease.monthly_rent||0),due_day:Number(lease.due_day||0)||null,start_date:lease.start_date||null,end_date:lease.end_date||null,verified_facts:{structured_lease:{rent_amount:Number(lease.monthly_rent||0),due_day:Number(lease.due_day||0)||null,start_date:lease.start_date||null,end_date:lease.end_date||null,status:lease.status}},extraction_status:'structured_ready',confidence:1,verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:'owner_id,lease_id'});
- }
+ const tenantMap=new Map((tenants||[]).map(t=>[t.id,t])),unitMap=new Map((units||[]).map(u=>[u.id,u]));const paidByCharge={};for(const p of payments||[])if(p.rent_charge_id)paidByCharge[p.rent_charge_id]=(paidByCharge[p.rent_charge_id]||0)+Number(p.amount||0);
+ for(const lease of leases||[])await admin.from('lease_intelligence').upsert({owner_id:ownerId,lease_id:lease.id,rent_amount:Number(lease.monthly_rent||0),due_day:Number(lease.due_day||0)||null,start_date:lease.start_date||null,end_date:lease.end_date||null,verified_facts:{structured_lease:{rent_amount:Number(lease.monthly_rent||0),due_day:Number(lease.due_day||0)||null,start_date:lease.start_date||null,end_date:lease.end_date||null,status:lease.status}},extraction_status:'structured_ready',confidence:1,verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:'owner_id,lease_id'});
  for(const property of properties||[]){
-  const pu=(units||[]).filter(u=>u.property_id===property.id),unitIds=new Set(pu.map(u=>u.id));
-  const pl=(leases||[]).filter(l=>unitIds.has(l.unit_id)),leaseIds=new Set(pl.map(l=>l.id));
-  const pc=(charges||[]).filter(c=>leaseIds.has(c.lease_id)),pp=(payments||[]).filter(p=>leaseIds.has(p.lease_id));
-  const pm=(maintenance||[]).filter(m=>m.property_id===property.id||unitIds.has(m.unit_id));
-  const pd=(documents||[]).filter(d=>leaseIds.has(d.lease_id));
-  const pe=(exceptions||[]).filter(e=>e.property_id===property.id);
+  const pu=(units||[]).filter(u=>u.property_id===property.id),unitIds=new Set(pu.map(u=>u.id));const pl=(leases||[]).filter(l=>unitIds.has(l.unit_id)),leaseIds=new Set(pl.map(l=>l.id));const pc=(charges||[]).filter(c=>leaseIds.has(c.lease_id)),pp=(payments||[]).filter(p=>leaseIds.has(p.lease_id));const pm=(maintenance||[]).filter(m=>m.property_id===property.id||unitIds.has(m.unit_id));const pd=(documents||[]).filter(d=>leaseIds.has(d.lease_id));const pe=(exceptions||[]).filter(e=>e.property_id===property.id);const pf=(findings||[]).filter(f=>f.property_id===property.id);const pa=(assets||[]).filter(a=>a.property_id===property.id);const pt=(preventive||[]).filter(t=>t.property_id===property.id);const pcm=(compliance||[]).filter(c=>c.property_id===property.id);
   const ledger=pl.map(l=>{const lc=pc.filter(c=>c.lease_id===l.id);const balance=lc.reduce((s,c)=>s+Math.max(0,Number(c.amount||0)-Number(paidByCharge[c.id]||0)),0);return{lease_id:l.id,tenant:tenantMap.get(l.tenant_id)?.full_name||'Resident',unit:unitMap.get(l.unit_id)?.unit_label||null,balance,due_day:l.due_day,end_date:l.end_date,status:l.status,last_payment:(pp.filter(p=>p.lease_id===l.id).sort((a,b)=>String(b.paid_at).localeCompare(String(a.paid_at)))[0]||null)}});
   const state={property,units:pu.map(u=>({id:u.id,unit_label:u.unit_label,status:u.status})),leases:ledger,financials:{outstanding:ledger.reduce((s,x)=>s+x.balance,0),payments_recorded:sum(pp,'amount')},maintenance:{open:pm.filter(x=>!['completed','cancelled'].includes(x.status)).length,emergency:pm.filter(x=>x.priority==='emergency'&&!['completed','cancelled'].includes(x.status)).length,recent:pm.slice(0,20)},documents:{total:pd.length,resident_visible:pd.filter(x=>x.visible_to_resident).length},exceptions:{open:pe.length,high:pe.filter(x=>['high','critical','emergency'].includes(x.severity)).length}};
-  const health=state.maintenance.emergency||state.exceptions.high?'attention':state.exceptions.open?'watch':'normal';
+  const now=new Date(),openM=pm.filter(x=>!['completed','cancelled'].includes(x.status));const maintenanceRisk=clamp(openM.reduce((s,x)=>s+(x.priority==='emergency'?25:x.priority==='high'?10:4),0));const inspectionRisk=clamp(pf.reduce((s,x)=>s+sevWeight(x.severity),0));const overdueAssets=pa.filter(a=>a.next_service_at&&new Date(a.next_service_at)<now).length;const assetRisk=clamp(overdueAssets*8);const overduePreventive=pt.filter(t=>t.due_at&&new Date(t.due_at)<now).length;const complianceRisk=clamp(pcm.reduce((s,m)=>s+((m.missing_fields?.length||0)>0?8:0)+(m.next_action_date&&new Date(m.next_action_date)<now?12:0),0));const exceptionRisk=clamp(pe.reduce((s,e)=>s+(e.severity==='critical'?25:e.severity==='high'?12:5),0));const outstanding=Number(state.financials.outstanding||0);const financialRisk=clamp(outstanding>0?Math.min(20,5+Math.log10(outstanding+1)*4):0);const deductions=Math.min(85,maintenanceRisk*.28+inspectionRisk*.32+assetRisk*.12+complianceRisk*.14+exceptionRisk*.1+financialRisk*.04+overduePreventive*2);const score=Number((100-deductions).toFixed(1));const health=score>=85?'healthy':score>=70?'watch':score>=50?'attention':'critical';
   await admin.from('property_ai_state').upsert({owner_id:ownerId,property_id:property.id,state,health_status:health,open_exception_count:pe.length,last_event_at:new Date().toISOString(),last_refreshed_at:new Date().toISOString()},{onConflict:'owner_id,property_id'});
+  await admin.from('property_health_scores').upsert({owner_id:ownerId,property_id:property.id,score,status:health,maintenance_risk:maintenanceRisk,inspection_risk:inspectionRisk,asset_risk:assetRisk,compliance_risk:complianceRisk,financial_risk:financialRisk,open_critical_findings:pf.filter(f=>['high','critical'].includes(f.severity)).length,open_preventive_tasks:overduePreventive,open_exceptions:pe.length,explanation:{open_maintenance:openM.length,open_findings:pf.length,overdue_assets:overdueAssets,overdue_preventive:overduePreventive,outstanding_balance:outstanding},calculated_at:new Date().toISOString()},{onConflict:'owner_id,property_id'});
  }
 }
-
-export async function refreshNovaPropertyState(){
- if(!admin||running)return;running=true;
- try{const{data:owners,error}=await admin.from('properties').select('owner_id');if(error)throw error;for(const ownerId of [...new Set((owners||[]).map(x=>x.owner_id).filter(Boolean))])await refreshOwner(ownerId)}catch(e){console.error('nova-property-state',e?.message||e)}finally{running=false}
-}
-export function startNovaPropertyManager(){
- if(!admin||timer)return;refreshNovaPropertyState();timer=setInterval(refreshNovaPropertyState,5*60*1000);if(timer?.unref)timer.unref()
-}
+export async function refreshNovaPropertyState(){if(!admin||running)return;running=true;try{const{data:owners,error}=await admin.from('properties').select('owner_id');if(error)throw error;for(const ownerId of [...new Set((owners||[]).map(x=>x.owner_id).filter(Boolean))])await refreshOwner(ownerId)}catch(e){console.error('nova-property-state',e?.message||e)}finally{running=false}}
+export function startNovaPropertyManager(){if(!admin||timer)return;refreshNovaPropertyState();timer=setInterval(refreshNovaPropertyState,5*60*1000);if(timer?.unref)timer.unref()}
