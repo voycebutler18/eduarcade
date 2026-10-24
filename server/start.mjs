@@ -1,6 +1,7 @@
 import './mendlyx-brand-patch.mjs';
 import './lease-vision-patch.mjs';
 import './autopay-patch.mjs';
+import './resident-nova-deterministic-patch.mjs';
 import './resident-concierge-patch.mjs';
 import './paypal-route-patch.mjs';
 import './maintenance-ops-patch.mjs';
@@ -21,10 +22,12 @@ import {startComplianceLifecycle} from './compliance-lifecycle.mjs';
 import {startAgentSwarm} from './agent-swarm.mjs';
 import {startLocalIntelligence} from './local-intelligence.mjs';
 import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
+import {startNovaPropertyManager} from './nova-property-manager.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
 startMoneyChaserAutoEngine();
+startNovaPropertyManager();
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
