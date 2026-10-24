@@ -4,9 +4,10 @@ import {MoneyChaser} from "./MoneyChaser";
 import {UniversalBusinessMoneyChaser} from "./UniversalBusinessMoneyChaser";
 import {MoneyChaserEmailQueue} from "./MoneyChaserEmailQueue";
 import {MoneyChaserAuthorization} from "./MoneyChaserAuthorization";
+import {MoneyChaserImportCenter} from "./MoneyChaserImportCenter";
 
 export function MoneyChaserHub({session}:{session:Session}){
- const[scope,setScope]=useState<"property"|"business">("property");
+ const[scope,setScope]=useState<"property"|"business">("property"),[importRefresh,setImportRefresh]=useState(0);
  return <>
   <MoneyChaserAuthorization session={session}/>
   <section className="panel-card" style={{marginBottom:16}}>
@@ -16,7 +17,7 @@ export function MoneyChaserHub({session}:{session:Session}){
     <button className={scope==="business"?"active":""} onClick={()=>setScope("business")}>Other Business AR</button>
    </div>
   </section>
-  {scope==="property"?<MoneyChaser session={session}/>:<UniversalBusinessMoneyChaser session={session}/>} 
-  <MoneyChaserEmailQueue session={session} scope={scope}/>
+  {scope==="property"?<MoneyChaser session={session}/>:<><UniversalBusinessMoneyChaser key={importRefresh} session={session}/><MoneyChaserImportCenter session={session} onImported={()=>setImportRefresh(x=>x+1)}/></>} 
+  <MoneyChaserEmailQueue key={`${scope}-${importRefresh}`} session={session} scope={scope}/>
  </>;
 }
