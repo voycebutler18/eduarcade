@@ -7,6 +7,7 @@ import './maintenance-ops-patch.mjs';
 import './maintenance-team-photo-patch.mjs';
 import './money-chaser-email-patch.mjs';
 import './resend-webhook-patch.mjs';
+import './money-chaser-integrations-patch.mjs';
 import './ai-server.mjs';
 import {installMaintenanceStorageFetch} from './maintenance-photo-loader.mjs';
 import {startMaintenanceAutoRouter} from './maintenance-auto-router.mjs';
