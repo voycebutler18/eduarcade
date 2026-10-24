@@ -6,7 +6,7 @@ type Props={onCreated?:()=>void};
 async function photoPayload(files:File[]){return Promise.all(files.slice(0,3).map(f=>new Promise<{name:string;data:string}>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve({name:f.name,data:String(r.result||"")});r.onerror=()=>reject(new Error("Unable to read photo"));r.readAsDataURL(f)})))}
 
 export function ResidentAIConcierge({onCreated}:Props){
- const[turns,setTurns]=useState<Turn[]>([{role:"ai",text:"Hi. I’m NOVA, your resident service desk. I check your verified lease, ledger, payments, documents and maintenance records first. If something needs management judgment, I’ll route it instead of guessing."}]);
+ const[turns,setTurns]=useState<Turn[]>([{role:"ai",text:"Hi. I’m NOVA, your resident service desk. I check your verified lease, ledger, payments, documents, maintenance records, and your recent app/email conversation before I answer."}]);
  const[text,setText]=useState("");
  const[files,setFiles]=useState<File[]>([]);
  const[busy,setBusy]=useState(false);
@@ -23,7 +23,11 @@ export function ResidentAIConcierge({onCreated}:Props){
     const deterministic=await paymentApi("/api/resident/nova",{message:residentText});
     if(deterministic?.handled){setTurns(v=>[...v,{role:"ai",text:deterministic.reply||"I verified that from your property records."}]);return}
    }
-   const result=await paymentApi("/api/resident/concierge",{message:residentText,history:next.map(x=>({role:x.role,text:x.text})),photos});
+   let crossChannel:any[]=[];
+   try{const thread=await paymentApi("/api/resident/thread-history",undefined,"GET");crossChannel=(thread?.messages||[]).map((m:any)=>({role:m.direction==="inbound"?"resident":"ai",text:m.body,channel:m.channel,created_at:m.created_at}))}catch{}
+   const localHistory=next.map(x=>({role:x.role,text:x.text,channel:"app"}));
+   const history=[...crossChannel,...localHistory].slice(-20);
+   const result=await paymentApi("/api/resident/concierge",{message:residentText,history,photos});
    if(result.action==="create_maintenance"){
     await paymentApi("/api/resident/maintenance",{
      category:result.category||"Other / Not Sure",area:result.area||"Other / Not Sure",issue:result.issue_type||"Other / Not Sure",
@@ -38,8 +42,8 @@ export function ResidentAIConcierge({onCreated}:Props){
  }
 
  return <section className="panel-card">
-  <div className="section-head"><div><p className="eyebrow">Resident service desk</p><h2>Ask NOVA</h2><p className="muted">Verified records first. AI only when the answer needs interpretation.</p></div><span className="pill">NOVA ACTIVE</span></div>
-  <div style={{display:"flex",flexDirection:"column",gap:9,maxHeight:430,overflowY:"auto",padding:"8px 0 14px"}}>{turns.map((t,i)=><div key={i} style={{alignSelf:t.role==="resident"?"flex-end":"flex-start",maxWidth:"84%",padding:"11px 13px",border:"1px solid #d9dfda",borderRadius:14,background:t.role==="resident"?"#eef6f0":"#fff"}}><b>{t.role==="resident"?"You":"NOVA"}</b><div style={{whiteSpace:"pre-wrap",marginTop:4}}>{t.text}</div></div>)}{busy&&<div className="muted">NOVA is checking your property records…</div>}</div>
+  <div className="section-head"><div><p className="eyebrow">Resident service desk</p><h2>Ask NOVA</h2><p className="muted">Verified records first. One conversation across app and email. AI only when interpretation is needed.</p></div><span className="pill">NOVA ACTIVE</span></div>
+  <div style={{display:"flex",flexDirection:"column",gap:9,maxHeight:430,overflowY:"auto",padding:"8px 0 14px"}}>{turns.map((t,i)=><div key={i} style={{alignSelf:t.role==="resident"?"flex-end":"flex-start",maxWidth:"84%",padding:"11px 13px",border:"1px solid #d9dfda",borderRadius:14,background:t.role==="resident"?"#eef6f0":"#fff"}}><b>{t.role==="resident"?"You":"NOVA"}</b><div style={{whiteSpace:"pre-wrap",marginTop:4}}>{t.text}</div></div>)}{busy&&<div className="muted">NOVA is checking your property records and conversation history…</div>}</div>
   {error&&<p className="form-message error">{error}</p>}
   <form className="auth-form" onSubmit={send}><textarea rows={3} value={text} onChange={e=>setText(e.target.value)} placeholder="Try: Did you get my rent? When does my lease end? Can I have a dog? What is the status of my repair?"/><label>Photo (optional)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e=>setFiles(Array.from(e.target.files||[]).slice(0,3))}/><small>{files.length?files.map(f=>f.name).join(" · "):"Attach up to 3 photos for maintenance or document questions."}</small></label><button className="primary-btn" disabled={busy||(!text.trim()&&!files.length)}>{busy?"Checking...":"Ask NOVA"}</button></form>
  </section>
