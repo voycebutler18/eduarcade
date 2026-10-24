@@ -7,6 +7,7 @@ import './paypal-route-patch.mjs';
 import './maintenance-ops-patch.mjs';
 import './maintenance-team-photo-patch.mjs';
 import './maintenance-vendor-job-patch.mjs';
+import './inspection-ai-patch.mjs';
 import './money-chaser-email-patch.mjs';
 import './resend-webhook-patch.mjs';
 import './money-chaser-integrations-patch.mjs';
