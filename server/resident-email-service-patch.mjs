@@ -7,7 +7,7 @@ const SUPABASE_URL=process.env.SUPABASE_URL||'https://pxikovdxfgsvqvvpwnky.supab
 const KEY=process.env.SUPABASE_PUBLISHABLE_KEY||'';
 const admin=process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
 const RESEND_API_KEY=process.env.RESEND_API_KEY||'';
-const FRONTEND_ORIGIN=process.env.FRONTEND_ORIGIN||'https://rentpilot-ai.onrender.com';
+const FRONTEND_ORIGIN=process.env.FRONTEND_ORIGIN||'https://mendlyx.com';
 const FROM_EMAIL=process.env.MONEY_CHASER_FROM_EMAIL||'baifi@baifisystems.com';
 const WEBHOOK_ENDPOINT=(process.env.RESIDENT_EMAIL_WEBHOOK_URL||'https://rentpilot-ai-backend-wlzb.onrender.com/api/resident-email/webhook').replace(/\/$/,'');
 let installed=false;
@@ -30,31 +30,18 @@ function isAcknowledgement(message=''){
 }
 function escapeHtml(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function topicTitle(topic='general'){return({acknowledgement:'Conversation update',payment_status:'Payment update',rent_due:'Rent due information',lease_end:'Lease information',documents:'Documents update',maintenance_status:'Maintenance update',pet_policy:'Lease pet policy',pet_request:'Pet request received',management_review:'Management review'}[topic]||'Resident service update')}
-function emailHtml(ctx,result){
+function emailHtml(ctx,result,preferenceUrl){
  const resident=escapeHtml(String(ctx.tenant?.full_name||'Resident').split(' ')[0]||'Resident');
  const reply=escapeHtml(result.reply).replace(/\n/g,'<br>');
  const topic=escapeHtml(topicTitle(result.topic));
  const portal=escapeHtml(FRONTEND_ORIGIN);
+ const preferences=escapeHtml(preferenceUrl||`${FRONTEND_ORIGIN}/?settings=1`);
  return `<!doctype html><html><body style="margin:0;background:#f2f5f2;font-family:Arial,Helvetica,sans-serif;color:#17231b">
  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f2f5f2;padding:28px 12px"><tr><td align="center">
  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dfe8df;border-radius:20px;overflow:hidden">
- <tr><td style="background:#173f2a;padding:24px 28px;color:#fff">
- <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#dfff86;font-weight:700">Mendlyx Resident Service</div>
- <div style="font-size:25px;font-weight:800;margin-top:6px">NOVA</div>
- <div style="font-size:14px;color:#cfe0d2;margin-top:4px">Your property service desk</div>
- </td></tr>
- <tr><td style="padding:28px">
- <div style="font-size:13px;font-weight:700;color:#54705d;text-transform:uppercase;letter-spacing:.8px">${topic}</div>
- <h2 style="margin:8px 0 18px;font-size:21px;color:#17231b">Hi ${resident},</h2>
- <div style="font-size:16px;line-height:1.65;background:#f7faf7;border:1px solid #e2eae2;border-radius:14px;padding:18px 20px">${reply}</div>
- <div style="margin-top:22px;padding-top:18px;border-top:1px solid #e8eee8;font-size:13px;line-height:1.55;color:#617066">
- This response was generated from your verified Mendlyx property records. You can reply directly to this email and your message will stay connected to your resident conversation.
- </div>
- <div style="margin-top:18px"><a href="${portal}" style="display:inline-block;background:#173f2a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 18px;border-radius:10px">Open Resident Portal</a></div>
- </td></tr>
- <tr><td style="padding:18px 28px;background:#f7faf7;border-top:1px solid #e6ece6;font-size:12px;color:#738078">
- Mendlyx NOVA • Rent • Lease • Maintenance • Documents
- </td></tr></table></td></tr></table></body></html>`;
+ <tr><td style="background:#173f2a;padding:24px 28px;color:#fff"><div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#dfff86;font-weight:700">Mendlyx Resident Service</div><div style="font-size:25px;font-weight:800;margin-top:6px">NOVA</div><div style="font-size:14px;color:#cfe0d2;margin-top:4px">Your property service desk</div></td></tr>
+ <tr><td style="padding:28px"><div style="font-size:13px;font-weight:700;color:#54705d;text-transform:uppercase;letter-spacing:.8px">${topic}</div><h2 style="margin:8px 0 18px;font-size:21px;color:#17231b">Hi ${resident},</h2><div style="font-size:16px;line-height:1.65;background:#f7faf7;border:1px solid #e2eae2;border-radius:14px;padding:18px 20px">${reply}</div><div style="margin-top:22px;padding-top:18px;border-top:1px solid #e8eee8;font-size:13px;line-height:1.55;color:#617066">This response was generated from your verified Mendlyx property records. You can reply directly to this email and your message will stay connected to your resident conversation.</div><div style="margin-top:18px"><a href="${portal}" style="display:inline-block;background:#173f2a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 18px;border-radius:10px">Open Resident Portal</a></div></td></tr>
+ <tr><td style="padding:18px 28px;background:#f7faf7;border-top:1px solid #e6ece6;font-size:12px;line-height:1.6;color:#738078">Mendlyx NOVA • Rent • Lease • Maintenance • Documents<br><a href="${portal}/?settings=1" style="color:#476554">Settings & Privacy</a> · <a href="${preferences}" style="color:#476554">Unsubscribe from optional emails</a><br><span>Service messages about your lease, payments, maintenance, security, or requested services may still be sent when necessary.</span></td></tr></table></td></tr></table></body></html>`;
 }
 function verifySvix(payload,headers,secret){if(!secret)return false;const id=String(headers['svix-id']||''),ts=String(headers['svix-timestamp']||''),sig=String(headers['svix-signature']||'');if(!id||!ts||!sig)return false;const age=Math.abs(Date.now()/1000-Number(ts));if(!Number.isFinite(age)||age>300)return false;const key=Buffer.from(String(secret).replace(/^whsec_/,''),'base64');const expected=crypto.createHmac('sha256',key).update(`${id}.${ts}.${payload}`).digest('base64');return sig.split(' ').some(part=>{const value=part.startsWith('v1,')?part.slice(3):part;try{return value.length===expected.length&&crypto.timingSafeEqual(Buffer.from(value),Buffer.from(expected))}catch{return false}})}
 async function resend(path,opts={}){const r=await fetch(`https://api.resend.com${path}`,{...opts,headers:{authorization:`Bearer ${RESEND_API_KEY}`,'content-type':'application/json',...(opts.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||`Resend ${r.status}`);return j}
@@ -81,6 +68,13 @@ async function resolve(ctx,message){
  return{handled:false,topic:'general',type:'exception',reply:'I received your message. I could not verify a complete answer from your property records, so I sent it to management rather than guessing.'}
 }
 async function ensureException(ctx,result,message){if(result.type!=='exception')return;const propertyId=ctx.lease?.units?.property_id||null;const{data:x}=await admin.from('nova_exceptions').select('id').eq('owner_id',ctx.tenant.owner_id).eq('tenant_id',ctx.tenant.id).eq('exception_type','resident_question').eq('status','open').maybeSingle();if(!x)await admin.from('nova_exceptions').insert({owner_id:ctx.tenant.owner_id,property_id:propertyId,unit_id:ctx.lease.unit_id,lease_id:ctx.lease.id,tenant_id:ctx.tenant.id,exception_type:'resident_question',severity:'normal',title:'Resident question needs review',summary:message.slice(0,1000),recommendation:'Review the resident question and answer only from verified records/policy.',metadata:{topic:result.topic,channel:'email'}})}
+async function preferenceUrl(ctx){
+ const settings=`${FRONTEND_ORIGIN}/?settings=1`;
+ if(!ctx.tenant?.user_id)return settings;
+ let{data}=await admin.from('account_privacy_settings').select('marketing_unsubscribe_token').eq('user_id',ctx.tenant.user_id).maybeSingle();
+ if(!data){await admin.from('account_privacy_settings').upsert({user_id:ctx.tenant.user_id,marketing_email_opt_in:false,product_update_email_opt_in:false,optional_cookies:false,analytics_cookies:false,sale_share_opt_out:true,updated_at:new Date().toISOString()},{onConflict:'user_id'});data=(await admin.from('account_privacy_settings').select('marketing_unsubscribe_token').eq('user_id',ctx.tenant.user_id).maybeSingle()).data}
+ return data?.marketing_unsubscribe_token?`${FRONTEND_ORIGIN}/?unsubscribe=${data.marketing_unsubscribe_token}`:settings
+}
 async function sendReply(ctx,threadId,result,subject,inReplyTo){
  if(!result.reply||!ctx.tenant.email||!RESEND_API_KEY)return null;
  const cfg=(await admin.from('resident_channel_config').select('resend_inbound_address').eq('owner_id',ctx.tenant.owner_id).maybeSingle()).data;
@@ -88,16 +82,8 @@ async function sendReply(ctx,threadId,result,subject,inReplyTo){
  const headers={};if(inReplyTo){headers['In-Reply-To']=inReplyTo;headers['References']=inReplyTo}
  const generic=!subject||/^resident email$/i.test(subject)||/^your mendlyx message$/i.test(subject);
  const emailSubject=generic?`Mendlyx NOVA • ${topicTitle(result.topic)}`:(subject.toLowerCase().startsWith('re:')?subject:`Re: ${subject}`);
- const j=await resend('/emails',{method:'POST',body:JSON.stringify({
-  from:`Mendlyx NOVA <${FROM_EMAIL}>`,
-  to:[ctx.tenant.email],
-  reply_to:replyTo,
-  subject:emailSubject,
-  text:result.reply,
-  html:emailHtml(ctx,result),
-  headers,
-  tags:[{name:'system',value:'resident_service_desk'},{name:'tenant_id',value:String(ctx.tenant.id)}]
- })});
+ const prefUrl=await preferenceUrl(ctx);
+ const j=await resend('/emails',{method:'POST',body:JSON.stringify({from:`Mendlyx NOVA <${FROM_EMAIL}>`,to:[ctx.tenant.email],reply_to:replyTo,subject:emailSubject,text:`${result.reply}\n\nSettings & Privacy: ${FRONTEND_ORIGIN}/?settings=1\nUnsubscribe from optional emails: ${prefUrl}\nService messages about your lease, payments, maintenance, security, or requested services may still be sent when necessary.`,html:emailHtml(ctx,result,prefUrl),headers,tags:[{name:'system',value:'resident_service_desk'},{name:'tenant_id',value:String(ctx.tenant.id)}]})});
  await admin.from('resident_thread_messages').insert({thread_id:threadId,owner_id:ctx.tenant.owner_id,tenant_id:ctx.tenant.id,lease_id:ctx.lease.id,channel:'email',direction:'outbound',body:result.reply,subject:emailSubject,topic:result.topic,resolution_type:result.type,provider:'resend',provider_email_id:j.id||null,in_reply_to:inReplyTo||null});
  await admin.from('resident_interactions').insert({owner_id:ctx.tenant.owner_id,property_id:ctx.lease?.units?.property_id||null,lease_id:ctx.lease.id,tenant_id:ctx.tenant.id,channel:'email',direction:'outbound',topic:result.topic,body:result.reply,resolution_type:result.type,source_id:j.id||null});
  await admin.from('messages').insert({owner_id:ctx.tenant.owner_id,tenant_id:ctx.tenant.id,lease_id:ctx.lease.id,direction:'outbound',channel:'email',body:result.reply,category:'resident_service',ai_summary:`NOVA ${topicTitle(result.topic)} reply sent by email.`});
