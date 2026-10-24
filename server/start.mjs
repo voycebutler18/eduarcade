@@ -23,11 +23,13 @@ import {startAgentSwarm} from './agent-swarm.mjs';
 import {startLocalIntelligence} from './local-intelligence.mjs';
 import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
 import {startNovaPropertyManager} from './nova-property-manager.mjs';
+import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
 startMoneyChaserAutoEngine();
 startNovaPropertyManager();
+startLeaseIntelligenceWorker();
 startJurisdictionResolver();
 startComplianceMonitor();
 startNovaSupervisor();
