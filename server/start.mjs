@@ -2,6 +2,7 @@ import './mendlyx-brand-patch.mjs';
 import './lease-vision-patch.mjs';
 import './autopay-patch.mjs';
 import './resident-nova-deterministic-patch.mjs';
+import './resident-email-service-patch.mjs';
 import './resident-concierge-patch.mjs';
 import './paypal-route-patch.mjs';
 import './maintenance-ops-patch.mjs';
