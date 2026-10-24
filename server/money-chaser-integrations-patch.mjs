@@ -1,0 +1,41 @@
+import express from 'express';
+import crypto from 'crypto';
+import {createClient} from '@supabase/supabase-js';
+
+const originalListen=express.application.listen;
+const SUPABASE_URL=process.env.SUPABASE_URL||'https://pxikovdxfgsvqvvpwnky.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||'sb_publishable_HKpnoybJTD0ILSYMUYNXWA_Jy25MuzT';
+const admin=process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
+const BACKEND_URL=(process.env.BACKEND_URL||'https://rentpilot-ai-backend-wlzb.onrender.com').replace(/\/$/,'');
+const FRONTEND_ORIGIN=(process.env.FRONTEND_ORIGIN||'https://mendlyx.com').replace(/\/$/,'');
+
+async function authUser(req){const token=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');if(!token)return null;const c=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false}});const{data,error}=await c.auth.getUser(token);return error?null:data.user}
+function callback(provider){return `${BACKEND_URL}/api/money-chaser/integrations/${provider}/callback`}
+function config(provider){
+ if(provider==='quickbooks')return{clientId:process.env.QUICKBOOKS_CLIENT_ID,secret:process.env.QUICKBOOKS_CLIENT_SECRET,authorize:'https://appcenter.intuit.com/connect/oauth2',scope:'com.intuit.quickbooks.accounting'};
+ if(provider==='xero')return{clientId:process.env.XERO_CLIENT_ID,secret:process.env.XERO_CLIENT_SECRET,authorize:'https://login.xero.com/identity/connect/authorize',scope:'openid profile email offline_access accounting.invoices.read accounting.contacts.read'};
+ if(provider==='square')return{clientId:process.env.SQUARE_APPLICATION_ID,secret:process.env.SQUARE_APPLICATION_SECRET,authorize:'https://connect.squareup.com/oauth2/authorize',scope:'INVOICES_READ CUSTOMERS_READ PAYMENTS_READ'};
+ if(provider==='stripe')return{clientId:process.env.STRIPE_CONNECT_CLIENT_ID,secret:process.env.STRIPE_SECRET_KEY,authorize:'https://connect.stripe.com/oauth/authorize',scope:'read_write'};
+ return null;
+}
+function authUrl(provider,c,state){const u=new URL(c.authorize);u.searchParams.set('client_id',c.clientId);u.searchParams.set('response_type','code');u.searchParams.set('scope',c.scope);u.searchParams.set('redirect_uri',callback(provider));u.searchParams.set('state',state);if(provider==='square')u.searchParams.set('session','false');return u.toString()}
+async function formToken(url,body,clientId,secret,basic=true){const headers={'content-type':'application/x-www-form-urlencoded','accept':'application/json'};if(basic)headers.authorization=`Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`;const r=await fetch(url,{method:'POST',headers,body:new URLSearchParams(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error_description||j.error||j.message||`OAuth token exchange failed (${r.status})`);return j}
+async function exchange(provider,c,code){
+ if(provider==='quickbooks')return formToken('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',{grant_type:'authorization_code',code,redirect_uri:callback(provider)},c.clientId,c.secret,true);
+ if(provider==='xero')return formToken('https://identity.xero.com/connect/token',{grant_type:'authorization_code',code,redirect_uri:callback(provider)},c.clientId,c.secret,true);
+ if(provider==='stripe')return formToken('https://connect.stripe.com/oauth/token',{grant_type:'authorization_code',code,client_secret:c.secret},'', '',false);
+ if(provider==='square'){const r=await fetch('https://connect.squareup.com/oauth2/token',{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({client_id:c.clientId,client_secret:c.secret,code,grant_type:'authorization_code',redirect_uri:callback(provider)})});const j=await r.json().catch(()=>({}));if(!r.ok||j.errors?.length)throw new Error(j.errors?.[0]?.detail||`Square token exchange failed (${r.status})`);return j}
+ throw new Error('Unsupported provider');
+}
+async function xeroAccount(token){const r=await fetch('https://api.xero.com/connections',{headers:{authorization:`Bearer ${token}`}});const j=await r.json();if(!r.ok||!Array.isArray(j)||!j.length)return{};return{id:j[0].tenantId,name:j[0].tenantName||j[0].tenantType||'Xero organisation',metadata:{connection_id:j[0].id,tenant_type:j[0].tenantType}}
+}
+async function saveConnection(ownerId,provider,tok,query){let externalId=null,name=null,metadata={};if(provider==='quickbooks'){externalId=String(query.realmId||'')||null;name=externalId?'QuickBooks company':null}else if(provider==='xero'){const x=await xeroAccount(tok.access_token);externalId=x.id||null;name=x.name||null;metadata=x.metadata||{}}else if(provider==='square'){externalId=tok.merchant_id||null;name='Square seller'}else if(provider==='stripe'){externalId=tok.stripe_user_id||null;name='Stripe account'}const expiresIn=Number(tok.expires_in||0);const expiresAt=expiresIn?new Date(Date.now()+expiresIn*1000).toISOString():null;await admin.schema('private').from('money_chaser_integration_tokens').upsert({owner_id:ownerId,provider,access_token:tok.access_token||null,refresh_token:tok.refresh_token||null,token_type:tok.token_type||'Bearer',scope:tok.scope||null,expires_at:expiresAt,external_account_id:externalId,metadata,updated_at:new Date().toISOString()},{onConflict:'owner_id,provider'});await admin.from('money_chaser_integrations').upsert({owner_id:ownerId,provider,status:'connected',external_account_id:externalId,external_account_name:name,last_sync_status:'never_synced',metadata,updated_at:new Date().toISOString()},{onConflict:'owner_id,provider'});}
+
+express.application.listen=function(...args){
+ if(!this.locals?.moneyChaserIntegrationRoutesInstalled){
+  this.locals.moneyChaserIntegrationRoutesInstalled=true;
+  this.post('/api/money-chaser/integrations/:provider/connect',async(req,res)=>{try{if(!admin)return res.status(503).json({error:'Integration service unavailable'});const user=await authUser(req);if(!user)return res.status(401).json({error:'Authentication required'});const provider=String(req.params.provider||'').toLowerCase(),c=config(provider);if(!c)return res.status(400).json({error:'Unsupported integration'});if(!c.clientId||!c.secret)return res.status(409).json({error:`${provider} app credentials are not configured yet`,needs_credentials:true});const state=crypto.randomBytes(32).toString('hex');await admin.schema('private').from('money_chaser_oauth_states').insert({state,owner_id:user.id,provider,expires_at:new Date(Date.now()+10*60*1000).toISOString()});await admin.from('money_chaser_integrations').upsert({owner_id:user.id,provider,status:'pending',updated_at:new Date().toISOString()},{onConflict:'owner_id,provider'});return res.json({url:authUrl(provider,c,state)})}catch(e){return res.status(500).json({error:e?.message||'Unable to start connection'})}});
+  this.get('/api/money-chaser/integrations/:provider/callback',async(req,res)=>{const provider=String(req.params.provider||'').toLowerCase();try{if(!admin)throw new Error('Integration service unavailable');const state=String(req.query.state||''),code=String(req.query.code||'');if(!state||!code)throw new Error(String(req.query.error_description||req.query.error||'Authorization was not completed'));const{data:s}=await admin.schema('private').from('money_chaser_oauth_states').select('owner_id,provider,expires_at').eq('state',state).maybeSingle();if(!s||s.provider!==provider||new Date(s.expires_at).getTime()<Date.now())throw new Error('This connection request expired or is invalid');await admin.schema('private').from('money_chaser_oauth_states').delete().eq('state',state);const c=config(provider);if(!c?.clientId||!c?.secret)throw new Error('Provider credentials are not configured');const tok=await exchange(provider,c,code);await saveConnection(s.owner_id,provider,tok,req.query);return res.redirect(`${FRONTEND_ORIGIN}/?view=money&integration=${encodeURIComponent(provider)}-connected`)}catch(e){console.error('money-chaser-oauth',provider,e);return res.redirect(`${FRONTEND_ORIGIN}/?view=money&integration_error=${encodeURIComponent(e?.message||'Connection failed')}`)}});
+ }
+ return originalListen.apply(this,args)
+};
