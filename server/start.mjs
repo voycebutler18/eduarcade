@@ -32,6 +32,7 @@ import {startNovaPropertyManager} from './nova-property-manager.mjs';
 import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
 import {startNovaOperationsWorker} from './nova-operations-worker.mjs';
 import {startProductionSelfTest} from './production-self-test.mjs';
+import {startDependencyAudit} from './dependency-audit.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
@@ -50,3 +51,4 @@ startComplianceLifecycle();
 startAgentSwarm();
 startLocalIntelligence();
 startProductionSelfTest();
+startDependencyAudit();
