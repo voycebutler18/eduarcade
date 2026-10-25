@@ -30,6 +30,7 @@ import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
 import {startNovaPropertyManager} from './nova-property-manager.mjs';
 import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
 import {startNovaOperationsWorker} from './nova-operations-worker.mjs';
+import {startProductionSelfTest} from './production-self-test.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
@@ -47,3 +48,4 @@ startComplianceRuleMatcher();
 startComplianceLifecycle();
 startAgentSwarm();
 startLocalIntelligence();
+startProductionSelfTest();
