@@ -14,7 +14,7 @@ async function inBatches(total,concurrency,fn){const out=[];let next=0;async fun
 
 async function localHttpSmoke(){
  const port=Number(process.env.PORT||10000),url=`http://127.0.0.1:${port}/health`,total=120,concurrency=12;
- const runs=await inBatches(total,concurrency,async()=>{const start=performance.now();try{const ctrl=AbortController.timeout(5000);const r=await fetch(url,{signal:ctrl});await r.arrayBuffer();return{ok:r.ok,status:r.status,ms:performance.now()-start}}catch(e){return{ok:false,status:0,ms:performance.now()-start,error:String(e?.message||e)}}});
+ const runs=await inBatches(total,concurrency,async()=>{const start=performance.now();try{const signal=AbortSignal.timeout(5000);const r=await fetch(url,{signal});await r.arrayBuffer();return{ok:r.ok,status:r.status,ms:performance.now()-start}}catch(e){return{ok:false,status:0,ms:performance.now()-start,error:String(e?.message||e)}}});
  const times=runs.map(x=>x.ms),failures=runs.filter(x=>!x.ok);
  return{ok:failures.length===0,total,concurrency,failed:failures.length,p50_ms:Math.round(percentile(times,.50)*10)/10,p95_ms:Math.round(percentile(times,.95)*10)/10,max_ms:Math.round(Math.max(...times)*10)/10};
 }
