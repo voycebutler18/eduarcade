@@ -60,29 +60,32 @@ async function recordCandidate(source,fingerprint,item){
 }
 async function ingest(source){
   const url=source.machine_endpoint||source.base_url;
-  const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'RentPilot-Legal-Ingestor/1.2 (+https://rentpilot-ai.onrender.com)','accept':'application/pdf,text/html;q=0.9,*/*;q=0.5'}});
+  const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'Mendlyx-Legal-Ingestor/1.3 (+https://mendlyx.com)','accept':'application/pdf,text/html;q=0.9,*/*;q=0.5'}});
   if(!r.ok)throw new Error('HTTP '+r.status);
   const bytes=Buffer.from(await r.arrayBuffer());
   const fingerprint=sha256(bytes);
   const {data:already}=await admin.from('compliance_rule_candidates').select('id').eq('source_registry_id',source.id).eq('source_fingerprint',fingerprint).limit(1);
   if((already||[]).length)return {source:source.authority_name,skipped:true,fingerprint};
   const contentType=(r.headers.get('content-type')||'').toLowerCase();
+  const magic=bytes.subarray(0,8).toString('latin1');
+  const isPdf=contentType.includes('application/pdf')||magic.startsWith('%PDF-');
   let text;
-  if(contentType.includes('pdf')||source.ingestion_mode==='pdf'){
+  if(isPdf){
     try{text=await pdfRelevantText(bytes)}catch(e){throw new Error('PDF parse failed: '+(e?.message||e))}
   }else{
+    if(source.ingestion_mode==='pdf')console.warn('legal-ingestor expected PDF but received',contentType||'unknown content type','from',source.authority_name);
     text=htmlText(bytes.toString('utf8'));
   }
   const sections=splitTexasSections(text).filter(x=>relevant(x.body));
-  if(!sections.length)throw new Error('No Chapter 24/92 statutory sections parsed from official Property Code source');
+  if(!sections.length)throw new Error(`No Chapter 24/92 statutory sections parsed from official Property Code source (${isPdf?'pdf':'html'})`);
   let inserted=0;
   for(const item of sections)if(await recordCandidate(source,fingerprint,item))inserted++;
   await admin.from('compliance_source_registry').update({
     last_fingerprint:fingerprint,last_http_status:r.status,last_checked_at:new Date().toISOString(),
     discovery_state:inserted?'parsed':'registered',last_error:null
   }).eq('id',source.id);
-  console.log('legal-ingestor parsed',source.authority_name,'sections',sections.length,'inserted',inserted);
-  return {source:source.authority_name,inserted,fingerprint,sections:sections.length};
+  console.log('legal-ingestor parsed',source.authority_name,'sections',sections.length,'inserted',inserted,'format',isPdf?'pdf':'html');
+  return {source:source.authority_name,inserted,fingerprint,sections:sections.length,format:isPdf?'pdf':'html'};
 }
 export async function runLegalIngestor(){
   if(!admin)return [];
