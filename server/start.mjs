@@ -1,3 +1,4 @@
+import './ai-hardening-patch.mjs';
 import './mendlyx-brand-patch.mjs';
 import './lease-vision-patch.mjs';
 import './autopay-patch.mjs';
