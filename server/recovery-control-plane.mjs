@@ -10,23 +10,21 @@ const SOURCE_BUCKETS=['lease-documents','maintenance-photos','message-attachment
 const MANIFEST_INTERVAL_MS=6*60*60*1000;
 const PROFILE='disaster-recovery-v1';
 const CRITICAL_TABLES=[
- 'profiles','properties','units','tenants','leases','charges','payments','payment_transactions','documents','messages',
+ 'profiles','properties','units','tenants','leases','rent_charges','payments','payment_transactions','lease_documents','property_documents','messages',
  'maintenance_requests','resident_threads','resident_thread_messages','resident_interactions','resident_channel_config','nova_exceptions',
- 'nova_autonomy_policies','property_ai_state','lease_intelligence','vendor_quotes','vendor_invoices','preventive_maintenance_tasks',
+ 'nova_autonomy_policies','property_ai_state','lease_intelligence','maintenance_quotes','vendor_invoices','preventive_maintenance_tasks',
  'money_chaser_profiles','money_chaser_debtors','money_chaser_receivables','money_chaser_payment_promises','money_chaser_communications',
- 'account_privacy_settings','privacy_requests','business_profiles','minor_data_authorizations'
+ 'account_privacy_settings','privacy_requests','account_business_profiles','minor_data_consent_requests'
 ];
 
 function sha256(value){return createHash('sha256').update(value).digest('hex')}
-function stable(obj){return JSON.stringify(obj,Object.keys(obj||{}).sort())}
-function delay(ms){return new Promise(r=>setTimeout(r,ms))}
 function pctMs(n){return Math.round(n*10)/10}
 function percentile(values,p){if(!values.length)return 0;const s=[...values].sort((a,b)=>a-b);return s[Math.min(s.length-1,Math.max(0,Math.ceil(s.length*p)-1))]}
 
 async function ensureBucket(name){
  const {data,error}=await admin.storage.listBuckets();if(error)throw error;
  if((data||[]).some(b=>b.id===name||b.name===name))return;
- const {error:createError}=await admin.storage.createBucket(name,{public:false,fileSizeLimit:null});
+ const {error:createError}=await admin.storage.createBucket(name,{public:false});
  if(createError&&!/already exists/i.test(createError.message||''))throw createError;
 }
 
@@ -51,8 +49,7 @@ async function listFiles(bucket,prefix='',depth=0){
 
 async function readObject(bucket,path){
  const {data,error}=await admin.storage.from(bucket).download(path);if(error)throw error;
- const bytes=Buffer.from(await data.arrayBuffer());
- return bytes;
+ return Buffer.from(await data.arrayBuffer());
 }
 
 async function backupObject(bucket,file,{index=true}={}){
@@ -100,9 +97,7 @@ async function tableCounts(){
 export async function runRecoveryManifest(reason='scheduled'){
  if(!admin)return null;
  const started=performance.now();
- const [{counts,errors},storage,health]=await Promise.all([
-  tableCounts(),mirrorStorage(),admin.rpc('mendlyx_internal_health_snapshot')
- ]);
+ const [{counts,errors},storage,health]=await Promise.all([tableCounts(),mirrorStorage(),admin.rpc('mendlyx_internal_health_snapshot')]);
  const integrity=health.data||{};
  const integrityFailures=Object.values(integrity.failures||{}).reduce((s,v)=>s+Number(v||0),0);
  const configuration={platform_backup_provider:'supabase',platform_backup_mode:'daily_physical',platform_retention_days:7,storage_mirror_bucket:MIRROR_BUCKET,source_buckets:SOURCE_BUCKETS,reason};
