@@ -4,7 +4,7 @@ import {runComplianceFallbackStress} from './legal-ingestor.mjs';
 const URL=process.env.SUPABASE_URL;
 const KEY=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const admin=URL&&KEY?createClient(URL,KEY,{auth:{persistSession:false}}):null;
-const PROFILE='compliance-fallback-v3';
+const PROFILE='compliance-fallback-v4';
 
 function percentile(values,p){if(!values.length)return 0;const s=[...values].sort((a,b)=>a-b);return s[Math.min(s.length-1,Math.max(0,Math.ceil(s.length*p)-1))]}
 async function concurrent(total,limit,fn){let n=0;const out=[];async function w(){while(n<total){const i=n++;out[i]=await fn(i)}}await Promise.all(Array.from({length:Math.min(total,limit)},w));return out}
