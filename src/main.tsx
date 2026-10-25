@@ -1,21 +1,8 @@
-import React,{useEffect,useState} from "react";
+import React,{lazy,Suspense,useEffect,useState} from "react";
 import ReactDOM from "react-dom/client";
 import type {Session} from "@supabase/supabase-js";
 import "./lib/leaseVisionFetchPatch";
-import App from "./App";
 import {supabase} from "./lib/supabase";
-import {ResidentConciergeLauncher} from "./components/ResidentConciergeLauncher";
-import {PublicLanding} from "./components/PublicLanding";
-import {PublicAuth} from "./components/PublicAuth";
-import {MaintenanceAccess} from "./components/MaintenanceAccess";
-import {MaintenanceAutomationSettings} from "./components/MaintenanceAutomationSettings";
-import {MaintenanceApprovalCenter} from "./components/MaintenanceApprovalCenter";
-import {NovaOwnerControlLauncher} from "./components/NovaOwnerControlLauncher";
-import {VendorJobPortal} from "./components/VendorJobPortal";
-import {SubscriptionGate} from "./components/SubscriptionGate";
-import {LegalFooter,LegalPageView,type LegalPage} from "./components/LegalPages";
-import {AccountSettings} from "./components/AccountSettings";
-import {CookieConsent,UnsubscribePage} from "./components/PrivacyControls";
 import "./styles/app.css";
 import "./styles/tenant-enterprise.css";
 import "./styles/landlord-enterprise.css";
@@ -24,6 +11,23 @@ import "./styles/onboarding.css";
 import "./styles/legal.css";
 import "./styles/settings.css";
 
+const App=lazy(()=>import("./App"));
+const ResidentConciergeLauncher=lazy(()=>import("./components/ResidentConciergeLauncher").then(m=>({default:m.ResidentConciergeLauncher})));
+const PublicLanding=lazy(()=>import("./components/PublicLanding").then(m=>({default:m.PublicLanding})));
+const PublicAuth=lazy(()=>import("./components/PublicAuth").then(m=>({default:m.PublicAuth})));
+const MaintenanceAccess=lazy(()=>import("./components/MaintenanceAccess").then(m=>({default:m.MaintenanceAccess})));
+const MaintenanceAutomationSettings=lazy(()=>import("./components/MaintenanceAutomationSettings").then(m=>({default:m.MaintenanceAutomationSettings})));
+const MaintenanceApprovalCenter=lazy(()=>import("./components/MaintenanceApprovalCenter").then(m=>({default:m.MaintenanceApprovalCenter})));
+const NovaOwnerControlLauncher=lazy(()=>import("./components/NovaOwnerControlLauncher").then(m=>({default:m.NovaOwnerControlLauncher})));
+const VendorJobPortal=lazy(()=>import("./components/VendorJobPortal").then(m=>({default:m.VendorJobPortal})));
+const SubscriptionGate=lazy(()=>import("./components/SubscriptionGate").then(m=>({default:m.SubscriptionGate})));
+const LegalFooter=lazy(()=>import("./components/LegalPages").then(m=>({default:m.LegalFooter})));
+const LegalPageView=lazy(()=>import("./components/LegalPages").then(m=>({default:m.LegalPageView})));
+const AccountSettings=lazy(()=>import("./components/AccountSettings").then(m=>({default:m.AccountSettings})));
+const CookieConsent=lazy(()=>import("./components/PrivacyControls").then(m=>({default:m.CookieConsent})));
+const UnsubscribePage=lazy(()=>import("./components/PrivacyControls").then(m=>({default:m.UnsubscribePage})));
+
+type LegalPage="privacy"|"terms"|"refunds"|"data"|"cookies"|"accessibility";
 const legalPages:LegalPage[]=["privacy","terms","refunds","data","cookies","accessibility"];
 const viewTitles:Record<string,string>={overview:"Overview",properties:"Properties",tenants:"Residents & Leases",documents:"Document Vault",money:"Money Chaser",payments:"Payments & Payouts",maintenance:"Maintenance",compliance:"Compliance & Inspections",inbox:"Inbox",vendors:"Vendors",local:"Local Intelligence",ai:"AI Activity",admin:"Admin"};
 const legalTitles:Record<LegalPage,string>={privacy:"Privacy Policy",terms:"Terms of Service",refunds:"Refund Policy",data:"Your Privacy Choices",cookies:"Cookie Policy",accessibility:"Accessibility"};
@@ -71,4 +75,4 @@ function Root(){
   return <><PublicLanding onStart={()=>location.href="/?auth=signup"} onSignIn={()=>location.href="/?auth=login"} onResidentSignIn={()=>location.href="/?auth=resident"}/><CookieConsent/></>;
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<React.StrictMode><Root/></React.StrictMode>);
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<React.StrictMode><Suspense fallback={<div className="loading-screen">Loading Mendlyx...</div>}><Root/></Suspense></React.StrictMode>);
