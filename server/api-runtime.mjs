@@ -15,6 +15,7 @@ import './money-chaser-email-patch.mjs';
 import './resend-webhook-patch.mjs';
 import './money-chaser-integrations-patch.mjs';
 import './mission-control-patch.mjs';
+import './recovery-status-patch.mjs';
 import './ai-server.mjs';
 import {startProductionSelfTest} from './production-self-test.mjs';
 import {startDependencyAudit} from './dependency-audit.mjs';
