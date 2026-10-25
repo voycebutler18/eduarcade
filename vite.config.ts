@@ -20,9 +20,48 @@ function mendlyxBrand(): Plugin {
   };
 }
 
+function mendlyxWorkspaceSplitting(): Plugin {
+  const screens = [
+    "PortfolioManager",
+    "MoneyChaserHub",
+    "MaintenanceManager",
+    "InboxManager",
+    "AIActivity",
+    "VendorManager",
+    "TenantPortal",
+    "MaintenanceTeamPortal",
+    "PaymentsManager",
+    "AdminDashboard",
+    "PublicRentPayment",
+    "ComplianceCenter",
+    "DocumentVault",
+    "NovaAssistant",
+    "LocalIntelligence",
+    "LandlordOverview"
+  ];
+
+  return {
+    name: "mendlyx-workspace-code-splitting",
+    enforce: "pre",
+    transform(code, id) {
+      if (!/[\\/]src[\\/]App\.tsx$/.test(id)) return null;
+      let next = code.replace(
+        'import { FormEvent, useEffect, useMemo, useState } from "react";',
+        'import { FormEvent, lazy, useEffect, useMemo, useState } from "react";'
+      );
+      for (const name of screens) {
+        const eager = `import { ${name} } from "./components/${name}";`;
+        const lazyImport = `const ${name}=lazy(()=>import("./components/${name}").then(m=>({default:m.${name}})));`;
+        next = next.replace(eager, lazyImport);
+      }
+      return next === code ? null : { code: next, map: null };
+    }
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [mendlyxBrand(), react()],
+  plugins: [mendlyxWorkspaceSplitting(), mendlyxBrand(), react()],
   server: {
     port: 5173,
     strictPort: false
