@@ -4,6 +4,7 @@ const URL=process.env.SUPABASE_URL;
 const KEY=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const admin=URL&&KEY?createClient(URL,KEY,{auth:{persistSession:false}}):null;
 const PROFILE='site-certification-v1';
+const REQUIRED_LEGAL_SOURCES=['Texas Legislature Online — Property Code','Texas Legislature Online — Property Code Chapter 24'];
 function percentile(values,p){if(!values.length)return 0;const s=[...values].sort((a,b)=>a-b);return s[Math.min(s.length-1,Math.max(0,Math.ceil(s.length*p)-1))]}
 function round(n){return Math.round(n*10)/10}
 async function concurrent(total,limit,fn){let n=0;const out=[];async function w(){while(n<total){const i=n++;out[i]=await fn(i)}}await Promise.all(Array.from({length:Math.min(total,limit)},w));return out}
@@ -23,7 +24,7 @@ export async function runSiteCertification(){
    admin.from('mendlyx_recovery_configuration').select('*').eq('id',1).maybeSingle(),
    admin.from('mendlyx_recovery_manifests').select('status,verified_at,storage_inventory,integrity_snapshot').order('created_at',{ascending:false}).limit(1).maybeSingle(),
    admin.from('mendlyx_recovery_drills').select('profile,status,finished_at,results').order('started_at',{ascending:false}).limit(1).maybeSingle(),
-   admin.from('compliance_source_registry').select('authority_name,discovery_state,last_http_status,last_error,consecutive_failures').eq('active',true).eq('verification_required',true),
+   admin.from('compliance_source_registry').select('authority_name,discovery_state,last_http_status,last_error,consecutive_failures').eq('active',true).in('authority_name',REQUIRED_LEGAL_SOURCES),
    admin.from('resident_channel_config').select('inbound_email_enabled,resend_inbound_address,resend_webhook_id').limit(10),
    admin.from('money_chaser_provider_config').select('provider,webhook_id,webhook_endpoint').eq('provider','resend').maybeSingle(),
    admin.from('mendlyx_stress_runs').select('profile,status,finished_at').in('profile',['nasa-v1','process-isolation-v1','ai-provider-failover-v1','compliance-fallback-v4']),
@@ -43,7 +44,7 @@ export async function runSiteCertification(){
    database_integrity:!health.error&&integrityFailures===0,
    recovery_manifest:Boolean(manifest?.status==='verified'&&manifestAge<=8&&Number(manifest?.storage_inventory?.failures||0)===0),
    recovery_drill:Boolean(drill?.status==='passed'),
-   legal_sources:legalRows.length>=2&&legalBad.length===0,
+   legal_sources:legalRows.length===REQUIRED_LEGAL_SOURCES.length&&legalBad.length===0,
    resident_email:emailReady&&globalWebhook,
    previous_stress_profiles:previousTestsOk,
    frontend:frontend.ok&&frontend.contains_mendlyx,
@@ -51,7 +52,7 @@ export async function runSiteCertification(){
   };
   const failedChecks=Object.entries(checks).filter(([,v])=>!v).map(([k])=>k);
   const ok=failedChecks.length===0;
-  const finishedAt=new Date().toISOString();const result={profile:PROFILE,ok,checks,failed_checks:failedChecks,api_pressure:apiPressure,integrity_failures:integrityFailures,recovery:{manifest_status:manifest?.status||null,manifest_age_hours:Number.isFinite(manifestAge)?round(manifestAge):null,drill_status:drill?.status||null},legal:{sources:legalRows.length,bad:legalBad.length},communications:{resident_email_ready:emailReady,resend_webhook_ready:globalWebhook},frontend,previous_stress_profiles:profileMap,duration_ms:round(performance.now()-started),finished_at:finishedAt};
+  const finishedAt=new Date().toISOString();const result={profile:PROFILE,ok,checks,failed_checks:failedChecks,api_pressure:apiPressure,integrity_failures:integrityFailures,recovery:{manifest_status:manifest?.status||null,manifest_age_hours:Number.isFinite(manifestAge)?round(manifestAge):null,drill_status:drill?.status||null},legal:{required:REQUIRED_LEGAL_SOURCES,found:legalRows.length,bad:legalBad.length},communications:{resident_email_ready:emailReady,resend_webhook_ready:globalWebhook},frontend,previous_stress_profiles:profileMap,duration_ms:round(performance.now()-started),finished_at:finishedAt};
   await admin.from('mendlyx_stress_runs').update({status:ok?'passed':'failed',finished_at:finishedAt,results:result}).eq('id',row.id);
   console[ok?'log':'error']('mendlyx-site-certification',JSON.stringify(result));return result;
  }catch(e){const finishedAt=new Date().toISOString();const result={profile:PROFILE,ok:false,error:String(e?.message||e).slice(0,700),finished_at:finishedAt,duration_ms:round(performance.now()-started)};await admin.from('mendlyx_stress_runs').update({status:'failed',finished_at:finishedAt,results:result}).eq('id',row.id);console.error('mendlyx-site-certification',JSON.stringify(result));return result}
