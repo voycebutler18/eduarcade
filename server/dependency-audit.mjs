@@ -2,6 +2,8 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const execFileAsync=promisify(execFile);
 let ran=false;
+globalThis.__mendlyxRuntimeHealth=globalThis.__mendlyxRuntimeHealth||{};
+function publish(result){globalThis.__mendlyxRuntimeHealth.dependency_audit=result;return result}
 
 export async function runDependencyAudit(){
  if(ran)return;ran=true;
@@ -18,8 +20,9 @@ export async function runDependencyAudit(){
    if(!['moderate','high','critical'].includes(String(v?.severity||'')))continue;
    vulnerabilities.push({name,severity:v.severity,direct:Boolean(v.isDirect),range:v.range||null,fix_available:v.fixAvailable||false,via:Array.isArray(v.via)?v.via.map(x=>typeof x==='string'?x:{source:x?.source||null,name:x?.name||null,severity:x?.severity||null,title:x?.title||null,range:x?.range||null}).slice(0,5):[]});
   }
-  console.log('mendlyx-dependency-audit',JSON.stringify({summary,vulnerabilities}));
- }catch(e){console.warn('mendlyx-dependency-audit',JSON.stringify({error:String(e?.message||e).slice(0,500)}))}
+  const result=publish({summary,vulnerabilities,generated_at:new Date().toISOString()});
+  console.log('mendlyx-dependency-audit',JSON.stringify(result));
+ }catch(e){const result=publish({error:String(e?.message||e).slice(0,500),generated_at:new Date().toISOString()});console.warn('mendlyx-dependency-audit',JSON.stringify(result))}
 }
 
 export function startDependencyAudit(){
