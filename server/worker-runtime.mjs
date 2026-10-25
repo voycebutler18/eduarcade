@@ -15,6 +15,7 @@ import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
 import {startNovaPropertyManager} from './nova-property-manager.mjs';
 import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
 import {startNovaOperationsWorker} from './nova-operations-worker.mjs';
+import {startOneTimeComplianceFallbackStress} from './compliance-fallback-stress.mjs';
 
 process.title='mendlyx-worker';
 installMaintenanceStorageFetch();
@@ -33,6 +34,7 @@ startComplianceRuleMatcher();
 startComplianceLifecycle();
 startAgentSwarm();
 startLocalIntelligence();
+startOneTimeComplianceFallbackStress();
 
 function heartbeat(){
  if(process.send)process.send({type:'worker_heartbeat',pid:process.pid,at:new Date().toISOString(),memory_mb:Math.round(process.memoryUsage().rss/1024/1024*10)/10});
