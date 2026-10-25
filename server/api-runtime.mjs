@@ -1,0 +1,31 @@
+import './ai-hardening-patch.mjs';
+import './mendlyx-brand-patch.mjs';
+import './lease-vision-patch.mjs';
+import './autopay-patch.mjs';
+import './resident-nova-deterministic-patch.mjs';
+import './resident-email-service-patch.mjs';
+import './resident-thread-history-patch.mjs';
+import './resident-concierge-patch.mjs';
+import './paypal-route-patch.mjs';
+import './maintenance-ops-patch.mjs';
+import './maintenance-team-photo-patch.mjs';
+import './maintenance-vendor-job-patch.mjs';
+import './inspection-ai-patch.mjs';
+import './money-chaser-email-patch.mjs';
+import './resend-webhook-patch.mjs';
+import './money-chaser-integrations-patch.mjs';
+import './mission-control-patch.mjs';
+import './ai-server.mjs';
+import {startProductionSelfTest} from './production-self-test.mjs';
+import {startDependencyAudit} from './dependency-audit.mjs';
+import {startOneTimeStressProfile} from './one-time-stress-profile.mjs';
+
+process.title='mendlyx-api';
+globalThis.__mendlyxRuntimeHealth=globalThis.__mendlyxRuntimeHealth||{};
+globalThis.__mendlyxRuntimeHealth.process_role='api';
+globalThis.__mendlyxRuntimeHealth.api_started_at=new Date().toISOString();
+
+startProductionSelfTest();
+startDependencyAudit();
+startOneTimeStressProfile();
+console.log('Mendlyx interactive API runtime active');
