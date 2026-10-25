@@ -33,6 +33,7 @@ import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
 import {startNovaOperationsWorker} from './nova-operations-worker.mjs';
 import {startProductionSelfTest} from './production-self-test.mjs';
 import {startDependencyAudit} from './dependency-audit.mjs';
+import {startOneTimeStressProfile} from './one-time-stress-profile.mjs';
 
 installMaintenanceStorageFetch();
 startMaintenanceAutoRouter();
@@ -52,3 +53,4 @@ startAgentSwarm();
 startLocalIntelligence();
 startProductionSelfTest();
 startDependencyAudit();
+startOneTimeStressProfile();
