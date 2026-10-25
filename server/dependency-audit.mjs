@@ -8,7 +8,7 @@ export async function runDependencyAudit(){
  try{
   let stdout='';
   try{
-   const r=await execFileAsync('npm',['audit','--json'],{timeout:30_000,maxBuffer:4*1024*1024,env:{...process.env,NPM_CONFIG_FUND:'false',NPM_CONFIG_AUDIT:'true'}});
+   const r=await execFileAsync('npm',['audit','--json','--include=dev'],{timeout:30_000,maxBuffer:4*1024*1024,env:{...process.env,NPM_CONFIG_FUND:'false',NPM_CONFIG_AUDIT:'true'}});
    stdout=r.stdout||'';
   }catch(e){stdout=e?.stdout||'';if(!stdout)throw e}
   const audit=JSON.parse(stdout||'{}');
