@@ -21,6 +21,7 @@ import {startProductionSelfTest} from './production-self-test.mjs';
 import {startDependencyAudit} from './dependency-audit.mjs';
 import {startOneTimeStressProfile} from './one-time-stress-profile.mjs';
 import {startAiFailoverStress} from './ai-failover-stress.mjs';
+import {startSiteCertification} from './site-certification.mjs';
 
 process.title='mendlyx-api';
 globalThis.__mendlyxRuntimeHealth=globalThis.__mendlyxRuntimeHealth||{};
@@ -31,4 +32,5 @@ startProductionSelfTest();
 startDependencyAudit();
 startOneTimeStressProfile();
 startAiFailoverStress();
+startSiteCertification();
 console.log('Mendlyx interactive API runtime active');
