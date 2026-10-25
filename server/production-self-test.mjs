@@ -3,6 +3,8 @@ import {createClient} from '@supabase/supabase-js';
 const SUPABASE_URL=process.env.SUPABASE_URL||'https://pxikovdxfgsvqvvpwnky.supabase.co';
 const admin=process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
 let running=false;
+globalThis.__mendlyxRuntimeHealth=globalThis.__mendlyxRuntimeHealth||{};
+function publish(result){globalThis.__mendlyxRuntimeHealth.self_test=result;return result}
 
 function envHealth(){
  const required=['SUPABASE_SERVICE_ROLE_KEY','SUPABASE_PUBLISHABLE_KEY','GROQ_API_KEY','RESEND_API_KEY'];
@@ -44,7 +46,7 @@ export async function runProductionSelfTest(reason='manual'){
   const env=envHealth();
   const missingEnv=Object.entries(env).filter(([,ok])=>!ok).map(([name])=>name);
   const load=reason==='startup'?await startupLoadSmoke():null;
-  const result={
+  const result=publish({
    ok:failed.length===0&&missingEnv.length===0&&(load?.ok!==false),
    reason,
    duration_ms:Date.now()-started,
@@ -53,19 +55,19 @@ export async function runProductionSelfTest(reason='manual'){
    load_smoke:load,
    signals:data?.signals||{},
    generated_at:data?.generated_at||new Date().toISOString()
-  };
+  });
   const level=result.ok?'log':'error';
   console[level]('mendlyx-self-test',JSON.stringify(result));
   return result;
  }catch(e){
-  const result={ok:false,reason,duration_ms:Date.now()-started,error:String(e?.message||e).slice(0,500)};
+  const result=publish({ok:false,reason,duration_ms:Date.now()-started,error:String(e?.message||e).slice(0,500),generated_at:new Date().toISOString()});
   console.error('mendlyx-self-test',JSON.stringify(result));
   return result;
  }finally{running=false}
 }
 
 export function startProductionSelfTest(){
- if(!admin){console.error('mendlyx-self-test',JSON.stringify({ok:false,error:'SUPABASE_SERVICE_ROLE_KEY missing'}));return}
+ if(!admin){const result=publish({ok:false,reason:'startup',error:'SUPABASE_SERVICE_ROLE_KEY missing',generated_at:new Date().toISOString()});console.error('mendlyx-self-test',JSON.stringify(result));return}
  const first=setTimeout(()=>runProductionSelfTest('startup'),20_000);
  first.unref?.();
  const timer=setInterval(()=>runProductionSelfTest('scheduled'),30*60_000);
