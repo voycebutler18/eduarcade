@@ -1,57 +1,11 @@
-import './ai-hardening-patch.mjs';
-import './mendlyx-brand-patch.mjs';
-import './lease-vision-patch.mjs';
-import './autopay-patch.mjs';
-import './resident-nova-deterministic-patch.mjs';
-import './resident-email-service-patch.mjs';
-import './resident-thread-history-patch.mjs';
-import './resident-concierge-patch.mjs';
-import './paypal-route-patch.mjs';
-import './maintenance-ops-patch.mjs';
-import './maintenance-team-photo-patch.mjs';
-import './maintenance-vendor-job-patch.mjs';
-import './inspection-ai-patch.mjs';
-import './money-chaser-email-patch.mjs';
-import './resend-webhook-patch.mjs';
-import './money-chaser-integrations-patch.mjs';
-import './mission-control-patch.mjs';
-import './ai-server.mjs';
-import {installMaintenanceStorageFetch} from './maintenance-photo-loader.mjs';
-import {startMaintenanceAutoRouter} from './maintenance-auto-router.mjs';
-import {startMaintenanceVendorAutopilot} from './maintenance-vendor-autopilot.mjs';
-import {startComplianceMonitor} from './compliance-monitor.mjs';
-import {startNovaSupervisor} from './nova-supervisor.mjs';
-import {startJurisdictionResolver} from './jurisdiction-resolver.mjs';
-import {startLegalIngestor} from './legal-ingestor.mjs';
-import {startLegalReviewer} from './legal-reviewer.mjs';
-import {startComplianceRuleMatcher} from './compliance-rule-matcher.mjs';
-import {startComplianceLifecycle} from './compliance-lifecycle.mjs';
-import {startAgentSwarm} from './agent-swarm.mjs';
-import {startLocalIntelligence} from './local-intelligence.mjs';
-import {startMoneyChaserAutoEngine} from './money-chaser-auto-engine.mjs';
-import {startNovaPropertyManager} from './nova-property-manager.mjs';
-import {startLeaseIntelligenceWorker} from './lease-intelligence-worker.mjs';
-import {startNovaOperationsWorker} from './nova-operations-worker.mjs';
-import {startProductionSelfTest} from './production-self-test.mjs';
-import {startDependencyAudit} from './dependency-audit.mjs';
-import {startOneTimeStressProfile} from './one-time-stress-profile.mjs';
+const role=String(process.env.MENDLYX_PROCESS_ROLE||'supervised').toLowerCase();
 
-installMaintenanceStorageFetch();
-startMaintenanceAutoRouter();
-startMaintenanceVendorAutopilot();
-startMoneyChaserAutoEngine();
-startNovaPropertyManager();
-startLeaseIntelligenceWorker();
-startNovaOperationsWorker();
-startJurisdictionResolver();
-startComplianceMonitor();
-startNovaSupervisor();
-startLegalIngestor();
-startLegalReviewer();
-startComplianceRuleMatcher();
-startComplianceLifecycle();
-startAgentSwarm();
-startLocalIntelligence();
-startProductionSelfTest();
-startDependencyAudit();
-startOneTimeStressProfile();
+if(role==='worker'){
+ await import('./worker-runtime.mjs');
+}else{
+ await import('./api-runtime.mjs');
+ if(role!=='api-only'){
+  const {startWorkerSupervisor}=await import('./worker-supervisor.mjs');
+  startWorkerSupervisor();
+ }
+}
