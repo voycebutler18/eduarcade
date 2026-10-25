@@ -1,0 +1,43 @@
+name: Mendlyx Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Capture npm audit
+        run: npm audit --json > npm-audit.json || true
+      - name: Print actionable audit summary
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const a=JSON.parse(fs.readFileSync('npm-audit.json','utf8'));
+          console.log(JSON.stringify(a.metadata?.vulnerabilities||{},null,2));
+          for(const [name,v] of Object.entries(a.vulnerabilities||{})){
+            if(['high','critical','moderate'].includes(v.severity)){
+              console.log(`PACKAGE=${name} SEVERITY=${v.severity} DIRECT=${v.isDirect} RANGE=${v.range} FIX=${JSON.stringify(v.fixAvailable)}`);
+              console.log(`VIA=${JSON.stringify(v.via)}`);
+            }
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-json
+          path: npm-audit.json
+          retention-days: 14
